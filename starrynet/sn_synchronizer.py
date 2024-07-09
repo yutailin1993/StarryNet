@@ -82,9 +82,13 @@ class StarryNet():
         self.ping_src = []
         self.ping_des = []
         self.ping_time = []
+        self.handover_srcs = []
+        self.handover_delays = []
+        self.handover_times = []
         self.perf_src = []
         self.perf_des = []
         self.perf_time = []
+        self.perf_throughputs = []
         self.sr_src = []
         self.sr_des = []
         self.sr_target = []
@@ -205,16 +209,28 @@ class StarryNet():
         self.sr_des.append(des)
         self.sr_target.append(next_hop_sat)
         self.sr_time.append(time_index)
+        
+    def set_handover_delays(self, src, time_index, delay=None):
+        self.handover_srcs.append(src)
+        self.handover_times.append(time_index)
+        if delay is None:
+            self.handover_delays.append(0.58)
+        else:
+            self.handover_delays.append(delay)
 
     def set_ping(self, sat1_index, sat2_index, time_index):
         self.ping_src.append(sat1_index)
         self.ping_des.append(sat2_index)
         self.ping_time.append(time_index)
 
-    def set_perf(self, sat1_index, sat2_index, time_index):
+    def set_perf(self, sat1_index, sat2_index, time_index, target_throughput=None):
         self.perf_src.append(sat1_index)
         self.perf_des.append(sat2_index)
         self.perf_time.append(time_index)
+        if target_throughput is None:
+            self.perf_throughputs.append(1)
+        else:
+            self.perf_throughputs.append(target_throughput)
 
     def start_emulation(self):
         # Start emulation in a new thread.
@@ -224,11 +240,12 @@ class StarryNet():
             self.container_id_list, self.file_path,
             self.configuration_file_path, self.update_interval,
             self.constellation_size, self.ping_src, self.ping_des,
-            self.ping_time, self.sr_src, self.sr_des, self.sr_target,
+            self.ping_time, self.handover_srcs, self.handover_delays,
+            self.handover_times, self.sr_src, self.sr_des, self.sr_target,
             self.sr_time, self.damage_ratio, self.damage_time,
             self.damage_list, self.recovery_time, self.route_src,
             self.route_time, self.duration, self.utility_checking_time,
-            self.perf_src, self.perf_des, self.perf_time)
+            self.perf_src, self.perf_des, self.perf_time, self.perf_throughputs)
         sn_thread.start()
         sn_thread.join()
 

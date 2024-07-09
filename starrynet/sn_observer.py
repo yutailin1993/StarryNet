@@ -150,7 +150,7 @@ class Observer():
         no_leo = orbit_number * sat_number
 
         topo_duration = [[[0 for i in range(no_leo + no_geo + no_fac)]
-                          for i in range(no_leo + no_geo + no_fac)]
+                          for j in range(no_leo + no_geo + no_fac)]
                          for k in range(duration)]
         for time in range(1, duration + 1):
             topo_path = path + '/delay/' + str(time) + ".txt"

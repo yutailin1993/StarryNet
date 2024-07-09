@@ -25,6 +25,22 @@ if __name__ == "__main__":
     sn.create_nodes()
     sn.create_links()
     sn.run_routing_deamon()
+    
+    with open('logs/example_neighbors.txt', 'w') as neighbors_file:
+        for node_idx in range(1, 28):
+            for time_idx in range(2, 60, 1):
+                neighbors = sn.get_neighbors(node_idx, time_idx)
+                log_entry = '{}|{}|{}\n'.format(node_idx, time_idx, str(neighbors))
+                
+                neighbors_file.write(log_entry)
+    
+    with open('logs/example_conn_GW_cells.txt', 'w') as GWC_file:
+        for node_idx in range(1, 26):
+            for time_idx in range(2, 60, 1):
+                GWC = sn.get_GSes(node_idx, time_idx)
+                log_entry = '{}|{}|{}\n'.format(node_idx, time_idx, str(GWC))
+                
+                GWC_file.write(log_entry)
 
     node_index1 = 1
     node_index2 = 2
@@ -53,31 +69,31 @@ if __name__ == "__main__":
     IP_list = sn.get_IP(node_index1)
     print("IP: " + str(IP_list))
 
-    ratio = 0.3
-    time_index = 5
-    # random damage of a given ratio at a certain time
-    sn.set_damage(ratio, time_index)
+    # ratio = 0.3
+    # time_index = 5
+    # # random damage of a given ratio at a certain time
+    # sn.set_damage(ratio, time_index)
 
-    time_index = 10
-    sn.set_recovery(time_index)  # recover the damages at a certain time
+    # time_index = 10
+    # sn.set_recovery(time_index)  # recover the damages at a certain time
 
-    node_index1 = 27
-    time_index = 15
-    # routing table of a node at a certain time. The output file will be written at the working directory.
-    sn.check_routing_table(node_index1, time_index)
+    # node_index1 = 27
+    # time_index = 15
+    # # routing table of a node at a certain time. The output file will be written at the working directory.
+    # sn.check_routing_table(node_index1, time_index)
 
     sat = 1
     des = 27
     next_hop_sat = 2
     time_index = 20
     # set the next hop at a certain time. Sat, Des and NextHopSat are indexes and Sat and NextHopSat are neighbors.
-    sn.set_next_hop(sat, des, next_hop_sat, time_index)
+    # sn.set_next_hop(sat, des, next_hop_sat, time_index)
 
-    node_index1 = 13
-    node_index2 = 14
-    time_index = 3
-    # ping msg of two nodes at a certain time. The output file will be written at the working directory.
-    sn.set_ping(node_index1, node_index2, time_index)
+    # node_index1 = 13
+    # node_index2 = 14
+    # time_index = 3
+    # # ping msg of two nodes at a certain time. The output file will be written at the working directory.
+    # sn.set_ping(node_index1, node_index2, time_index)
     for i in range(35, 80):
         node_index1 = 26
         node_index2 = 27
@@ -85,11 +101,17 @@ if __name__ == "__main__":
         # ping msg of two nodes at a certain time. The output file will be written at the working directory.
         sn.set_ping(node_index1, node_index2, time_index)
 
-    node_index1 = 13
-    node_index2 = 14
-    time_index = 4
+    node_index1 = 26
+    node_index2 = 27
+    time_index = 35
     # perf msg of two nodes at a certain time. The output file will be written at the working directory.
     sn.set_perf(node_index1, node_index2, time_index)
+    
+    sn.set_perf(node_index2, node_index1, time_index)
+    
+    sn.set_perf(node_index1, node_index2, 50)
+    
+    sn.set_perf(node_index2, node_index1, 50)
 
     sn.start_emulation()
     sn.stop_emulation()

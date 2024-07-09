@@ -50,7 +50,13 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+*.egg
 
 .DS_Store
 .idea
 __pycache__
+starlink*
+/build/
+/starrynet.egg-info/
+/sim_configs/
+/logs/

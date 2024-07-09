@@ -58,7 +58,7 @@ def sn_ISL_establish(current_sat_id, current_orbit_id, container_id_list,
                                   current_sat_id]) +
             " ip addr | grep -B 2 10." + str(address_16_23) + "." +
             str(address_8_15) +
-            ".40 | head -n 1 | awk -F: '{ print $2 }' | tr -d [:blank:]") as f:
+            ".40 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
         ifconfig_output = f.readline()
         target_interface = str(ifconfig_output).split("@")[0]
         os.system("docker exec -d " +
@@ -97,7 +97,7 @@ def sn_ISL_establish(current_sat_id, current_orbit_id, container_id_list,
             str(container_id_list[down_orbit_id * sat_num + down_sat_id]) +
             " ip addr | grep -B 2 10." + str(address_16_23) + "." +
             str(address_8_15) +
-            ".10 | head -n 1 | awk -F: '{ print $2 }' | tr -d [:blank:]") as f:
+            ".10 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
         ifconfig_output = f.readline()
         target_interface = str(ifconfig_output).split("@")[0]
         os.system("docker exec -d " +
@@ -162,7 +162,7 @@ def sn_ISL_establish(current_sat_id, current_orbit_id, container_id_list,
                                   current_sat_id]) +
             " ip addr | grep -B 2 10." + str(address_16_23) + "." +
             str(address_8_15) +
-            ".30 | head -n 1 | awk -F: '{ print $2 }' | tr -d [:blank:]") as f:
+            ".30 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
         ifconfig_output = f.readline()
         target_interface = str(ifconfig_output).split("@")[0]
         os.system("docker exec -d " +
@@ -202,7 +202,7 @@ def sn_ISL_establish(current_sat_id, current_orbit_id, container_id_list,
             str(container_id_list[right_orbit_id * sat_num + right_sat_id]) +
             " ip addr | grep -B 2 10." + str(address_16_23) + "." +
             str(address_8_15) +
-            ".20 | head -n 1 | awk -F: '{ print $2 }' | tr -d [:blank:]") as f:
+            ".20 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
         ifconfig_output = f.readline()
         target_interface = str(ifconfig_output).split("@")[0]
         os.system("docker exec -d " +
@@ -304,7 +304,7 @@ def sn_establish_GSL(container_id_list, matrix, GS_num, constellation_size, bw,
                     "docker exec -it " + str(container_id_list[i - 1]) +
                     " ip addr | grep -B 2 9." + str(address_16_23) + "." +
                     str(address_8_15) +
-                    ".50 | head -n 1 | awk -F: '{ print $2 }' | tr -d [:blank:]"
+                    ".50 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'"
             ) as f:
                 ifconfig_output = f.readline()
                 target_interface = str(ifconfig_output).split("@")[0]
@@ -330,7 +330,7 @@ def sn_establish_GSL(container_id_list, matrix, GS_num, constellation_size, bw,
                     "docker exec -it " + str(container_id_list[j - 1]) +
                     " ip addr | grep -B 2 9." + str(address_16_23) + "." +
                     str(address_8_15) +
-                    ".60 | head -n 1 | awk -F: '{ print $2 }' | tr -d [:blank:]"
+                    ".60 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'"
             ) as f:
                 ifconfig_output = f.readline()
                 target_interface = str(ifconfig_output).split("@")[0]
@@ -363,7 +363,7 @@ def sn_establish_GSL(container_id_list, matrix, GS_num, constellation_size, bw,
         with os.popen(
                 "docker exec -it " + str(container_id_list[j - 1]) +
                 " ip addr | grep -B 2 9." + str(j) + "." + str(j) +
-                ".10 | head -n 1 | awk -F: '{ print $2 }' | tr -d [:blank:]"
+                ".10 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'"
         ) as f:
             ifconfig_output = f.readline()
             target_interface = str(ifconfig_output).split("@")[0]

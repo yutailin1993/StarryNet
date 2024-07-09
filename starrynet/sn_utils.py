@@ -46,7 +46,7 @@ def get_down_satellite(current_sat_id, current_orbit_id, sat_num):
 
 
 def sn_load_file(path, GS_lat_long):
-    f = open("./config.json", "r", encoding='utf8')
+    f = open(path, "r", encoding='utf8')
     table = json.load(f)
     data = {}
     data['cons_name'] = table["Name"]
@@ -356,10 +356,10 @@ class sn_Emulation_Start_Thread(threading.Thread):
     def __init__(self, remote_ssh, remote_ftp, sat_loss, sat_ground_bw,
                  sat_ground_loss, container_id_list, file_path,
                  configuration_file_path, update_interval, constellation_size,
-                 ping_src, ping_des, ping_time, sr_src, sr_des, sr_target,
-                 sr_time, damage_ratio, damage_time, damage_list,
+                 ping_src, ping_des, ping_time, handover_srcs, handover_delays, handover_times, 
+                 sr_src, sr_des, sr_target, sr_time, damage_ratio, damage_time, damage_list,
                  recovery_time, route_src, route_time, duration,
-                 utility_checking_time, perf_src, perf_des, perf_time):
+                 utility_checking_time, perf_src, perf_des, perf_time, perf_throughputs):
         threading.Thread.__init__(self)
         self.remote_ssh = remote_ssh
         self.remote_ftp = remote_ftp
@@ -374,9 +374,13 @@ class sn_Emulation_Start_Thread(threading.Thread):
         self.ping_src = ping_src
         self.ping_des = ping_des
         self.ping_time = ping_time
+        self.handover_srcs = handover_srcs
+        self.handover_delays = handover_delays
+        self.handover_times = handover_times
         self.perf_src = perf_src
         self.perf_des = perf_des
         self.perf_time = perf_time
+        self.perf_throughputs = perf_throughputs
         self.sr_src = sr_src
         self.sr_des = sr_des
         self.sr_target = sr_target
@@ -439,6 +443,17 @@ class sn_Emulation_Start_Thread(threading.Thread):
                                   self.sr_des[index_num],
                                   self.sr_target[index_num],
                                   self.container_id_list, self.remote_ssh)
+                    if timeptr in self.handover_times:
+                        index = [
+                            i for i, val in enumerate(self.handover_times)
+                            if val == timeptr
+                        ]
+                        for index_num in index:
+                            sn_handover_overhead(self.handover_srcs[index_num],
+                                                 self.handover_delays[index_num],
+                                                 self.constellation_size,
+                                                 self.container_id_list,
+                                                 self.remote_ssh)
                     if timeptr in self.ping_time:
                         if timeptr in self.ping_time:
                             index = [
@@ -470,6 +485,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                                     args=(self.perf_src[index_num],
                                           self.perf_des[index_num],
                                           self.perf_time[index_num],
+                                          self.perf_throughputs[index_num],
                                           self.constellation_size,
                                           self.container_id_list,
                                           self.file_path,
@@ -599,6 +615,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                                 args=(self.perf_src[index_num],
                                       self.perf_des[index_num],
                                       self.perf_time[index_num],
+                                      self.perf_throughputs[index_num],
                                       self.constellation_size,
                                       self.container_id_list, self.file_path,
                                       self.configuration_file_path,
@@ -736,8 +753,24 @@ def sn_ping(src, des, time_index, constellation_size, container_id_list,
     f.writelines(ping_result)
     f.close()
 
-
-def sn_perf(src, des, time_index, constellation_size, container_id_list,
+def sn_handover_overhead(src, handover_delay, constellation_size, container_id_list,
+                remote_ssh):
+    if src <= constellation_size:
+        return False
+    
+    sn_remote_cmd(
+        remote_ssh, "docker exec -it " + str(container_id_list[src - 1]) +
+        "sudo tc qdisc add dev " + "B" + str(src) + 
+        "-default root netem loss 100% && nohup bash -c \"sleep " + 
+        str(handover_delay) + " && sudo tc qdisc del dev " + "B" + str(src) +
+        "-default root\" > /dev/null &")
+    print('[Apply handover overhead:]' + "docker exec -it " + str(container_id_list[src - 1]) +
+        "sudo tc qdisc add dev " + "B" + str(src) + 
+        "-default root netem loss 100% && nohup bash -c \"sleep " + 
+        str(handover_delay) + " && sudo tc qdisc del dev " + "B" + str(src) +
+        "-default root\" > /dev/null &")
+    
+def sn_perf(src, des, time_index, target_throughput, constellation_size, container_id_list,
             file_path, configuration_file_path, remote_ssh):
     if des <= constellation_size:
         ifconfig_output = sn_remote_cmd(
@@ -759,8 +792,12 @@ def sn_perf(src, des, time_index, constellation_size, container_id_list,
     print("iperf server success")
     perf_result = sn_remote_cmd(
         remote_ssh, "docker exec -i " + str(container_id_list[src - 1]) +
-        " iperf3 -c " + str(des_IP[0][:-1]) + " -t 5 ")
+        " iperf3 -c " + str(des_IP[0][:-1]) + " -t 5 -b " + str(target_throughput) + "M")
     print("iperf client success")
+    
+    # DEBUG: perf des ip
+    print("des_IP: {}".format(des_IP[0][:-1]))
+    # DEBUG: end
     f = open(
         configuration_file_path + "/" + file_path + "/perf-" + str(src) + "-" +
         str(des) + "_" + str(time_index) + ".txt", "w")
@@ -804,7 +841,7 @@ def sn_establish_new_GSL(container_id_list, matrix, constellation_size, bw,
         remote_ssh, "docker exec -it " + str(container_id_list[i - 1]) +
         " ip addr | grep -B 2 9." + str(address_16_23) + "." +
         str(address_8_15) +
-        ".50 | head -n 1 | awk -F: '{ print $2 }' | tr -d [:blank:]")
+        ".50 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'")
     target_interface = str(ifconfig_output[0]).split("@")[0]
     sn_remote_cmd(
         remote_ssh, "docker exec -d " + str(container_id_list[i - 1]) +
@@ -829,7 +866,7 @@ def sn_establish_new_GSL(container_id_list, matrix, constellation_size, bw,
         " tc qdisc add dev B" + str(i - 1 + 1) + "-eth" + str(j) +
         " root netem rate " + str(bw) + "Gbps")
     print('[Add current node:]' + 'docker network connect ' + GSL_name + " " +
-          str(container_id_list[i - 1]) + " --ip 10." + str(address_16_23) +
+          str(container_id_list[i - 1]) + " --ip 9." + str(address_16_23) +
           "." + str(address_8_15) + ".50")
     sn_remote_cmd(
         remote_ssh, 'docker network connect ' + GSL_name + " " +
@@ -839,7 +876,7 @@ def sn_establish_new_GSL(container_id_list, matrix, constellation_size, bw,
         remote_ssh, "docker exec -it " + str(container_id_list[j - 1]) +
         " ip addr | grep -B 2 9." + str(address_16_23) + "." +
         str(address_8_15) +
-        ".60 | head -n 1 | awk -F: '{ print $2 }' | tr -d [:blank:]")
+        ".60 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'")
     target_interface = str(ifconfig_output[0]).split("@")[0]
     sn_remote_cmd(
         remote_ssh, "docker exec -d " + str(container_id_list[j - 1]) +
