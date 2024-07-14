@@ -18,7 +18,8 @@ class Observer():
 
     def __init__(self, file_path, configuration_file_path, inclination,
                  satellite_altitude, orbit_number, sat_number, duration,
-                 antenna_number, GS_lat_long, antenna_inclination,
+                 gw_antenna_number, cell_antenna_number, gw_list, cell_list, 
+                 GS_lat_long, antenna_inclination, 
                  intra_routing, hello_interval, AS):
         self.file_path = file_path
         self.configuration_file_path = configuration_file_path
@@ -27,7 +28,10 @@ class Observer():
         self.orbit_number = orbit_number
         self.sat_number = sat_number
         self.duration = duration
-        self.antenna_number = antenna_number
+        self.gw_antenna_number = gw_antenna_number
+        self.cell_antenna_number = cell_antenna_number
+        self.gw_list = gw_list
+        self.cell_list = cell_list
         self.GS_lat_long = GS_lat_long
         self.antenna_inclination = antenna_inclination
         self.intra_routing = intra_routing
@@ -36,10 +40,16 @@ class Observer():
 
     def access_P_L_shortest(self, sat_cbf, fac_cbf, fac_num, sat_num,
                             num_orbits, num_sats_per_orbit, duration, fac_ll,
-                            sat_lla, bound_dis, alpha, antenna_num, path):
+                            sat_lla, bound_dis, alpha, gw_antenna_num,
+                            cell_antenna_num, path):
         delay_matrix = np.zeros((fac_num + sat_num, fac_num + sat_num))
         for cur_time in range(duration):
             for i in range(0, fac_num):
+                if i + sat_num in self.gw_list:
+                    antenna_num = gw_antenna_num
+                else:
+                    antenna_num = cell_antenna_num
+                
                 access_list = {}
                 fac_lat = float(fac_ll[i][0])  # latitude
                 up_lat = fac_lat + alpha  # bound
@@ -310,7 +320,8 @@ class Observer():
                                  self.sat_number * self.orbit_number,
                                  self.orbit_number, self.sat_number,
                                  self.duration, self.GS_lat_long, sat_lla,
-                                 bound_dis, alpha, self.antenna_number, path)
+                                 bound_dis, alpha, self.gw_antenna_number,
+                                 self.cell_antenna_number, path)
         self.matrix_to_change(self.duration, self.orbit_number,
                               self.sat_number, path, self.GS_lat_long)
 

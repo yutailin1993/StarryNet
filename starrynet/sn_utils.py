@@ -71,7 +71,8 @@ def sn_load_file(path, GS_lat_long):
     data['ground_num'] = table["GS number"]
     data['multi_machine'] = table[
         "multi-machine (\"0\" for no, \"1\" for yes)"]
-    data['antenna_number'] = table["antenna number"]
+    data['gw_antenna_number'] = table["gw antenna number"]
+    data['cell_antenna_number'] = table["cell antenna number"]
     data['antenna_inclination'] = table["antenna_inclination_angle"]
     data['remote_machine_IP'] = table["remote_machine_IP"]
     data['remote_machine_username'] = table["remote_machine_username"]
@@ -114,9 +115,12 @@ def sn_load_file(path, GS_lat_long):
     parser.add_argument('--multi_machine',
                         type=int,
                         default=data['multi_machine'])
-    parser.add_argument('--antenna_number',
+    parser.add_argument('--gw_antenna_number',
                         type=int,
-                        default=data['antenna_number'])
+                        default=data['gw_antenna_number'])
+    parser.add_argument('--cell_antenna_number',
+                        type=int,
+                        default=data['cell_antenna_number'])
     parser.add_argument('--antenna_inclination',
                         type=int,
                         default=data['antenna_inclination'])
@@ -354,18 +358,21 @@ class sn_Routing_Init_Thread(threading.Thread):
 class sn_Emulation_Start_Thread(threading.Thread):
 
     def __init__(self, remote_ssh, remote_ftp, sat_loss, sat_ground_bw,
-                 sat_ground_loss, container_id_list, file_path,
+                 sat_ground_loss, gw_list, cell_list, container_id_list, file_path,
                  configuration_file_path, update_interval, constellation_size,
                  ping_src, ping_des, ping_time, handover_srcs, handover_delays, handover_times, 
                  sr_src, sr_des, sr_target, sr_time, damage_ratio, damage_time, damage_list,
                  recovery_time, route_src, route_time, duration,
-                 utility_checking_time, perf_src, perf_des, perf_time, perf_throughputs):
+                 utility_checking_time, perf_src, perf_des, perf_time, perf_throughputs,
+                 traceroute_src, traceroute_dst, traceroute_time):
         threading.Thread.__init__(self)
         self.remote_ssh = remote_ssh
         self.remote_ftp = remote_ftp
         self.sat_loss = sat_loss
         self.sat_ground_bw = sat_ground_bw
         self.sat_ground_loss = sat_ground_loss
+        self.gw_list = gw_list
+        self.cell_list = cell_list
         self.container_id_list = copy.deepcopy(container_id_list)
         self.file_path = file_path
         self.configuration_file_path = configuration_file_path
@@ -391,6 +398,9 @@ class sn_Emulation_Start_Thread(threading.Thread):
         self.recovery_time = recovery_time
         self.route_src = route_src
         self.route_time = route_time
+        self.traceroute_src = traceroute_src
+        self.traceroute_dst = traceroute_dst
+        self.traceroute_time = traceroute_time
         self.duration = duration
         self.utility_checking_time = utility_checking_time
         if self.container_id_list == []:
@@ -399,7 +409,14 @@ class sn_Emulation_Start_Thread(threading.Thread):
     def run(self):
         ping_threads = []
         perf_threads = []
+        traceroute_threads = []
         timeptr = 2  # current emulating time
+        
+        # init gateway iperf server
+        for gw in self.gw_list:
+            print('Setting up iperf server on gateway ' + str(gw) + '...')
+            sn_setup_gw_iperf_server(gw, self.container_id_list, self.remote_ssh)
+        
         topo_change_file_path = self.configuration_file_path + "/" + self.file_path + '/Topo_leo_change.txt'
         fi = open(topo_change_file_path, 'r')
         line = fi.readline()
@@ -486,6 +503,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                                           self.perf_des[index_num],
                                           self.perf_time[index_num],
                                           self.perf_throughputs[index_num],
+                                          self.gw_list,
                                           self.constellation_size,
                                           self.container_id_list,
                                           self.file_path,
@@ -493,6 +511,24 @@ class sn_Emulation_Start_Thread(threading.Thread):
                                           self.remote_ssh))
                                 perf_thread.start()
                                 perf_threads.append(perf_thread)
+                    if timeptr in self.traceroute_time:
+                        index = [
+                            i for i, val in enumerate(self.traceroute_time)
+                            if val == timeptr
+                        ]
+                        for index_num in index:
+                            traceroute_thread = threading.Thread(
+                                target=sn_traceroute,
+                                args=(self.traceroute_src[index_num],
+                                      self.traceroute_dst[index_num],
+                                      self.traceroute_time[index_num],
+                                      self.constellation_size,
+                                      self.container_id_list, self.file_path,
+                                      self.configuration_file_path,
+                                      self.remote_ssh))
+                            traceroute_thread.start()
+                            traceroute_threads.append(traceroute_thread)
+                        
                     if timeptr in self.route_time:
                         index = [
                             i for i, val in enumerate(self.route_time)
@@ -616,12 +652,29 @@ class sn_Emulation_Start_Thread(threading.Thread):
                                       self.perf_des[index_num],
                                       self.perf_time[index_num],
                                       self.perf_throughputs[index_num],
+                                      self.gw_list,
                                       self.constellation_size,
                                       self.container_id_list, self.file_path,
                                       self.configuration_file_path,
                                       self.remote_ssh))
                             perf_thread.start()
                             perf_threads.append(perf_thread)
+                if timeptr in self.traceroute_time:
+                    index = [
+                        i for i, val in enumerate(self.traceroute_time)
+                        if val == timeptr
+                    ]
+                    for index_num in index:
+                        traceroute_thread = threading.Thread(
+                            target=sn_traceroute,
+                            args=(self.traceroute_src[index_num],
+                                  self.traceroute_dst[index_num],
+                                  self.traceroute_time[index_num],
+                                  self.constellation_size,
+                                  self.container_id_list, self.file_path,
+                                  self.configuration_file_path, self.remote_ssh))
+                        traceroute_thread.start()
+                        traceroute_threads.append(traceroute_thread)
                 if timeptr in self.route_time:
                     index = [
                         i for i, val in enumerate(self.route_time)
@@ -633,6 +686,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                                  self.configuration_file_path,
                                  self.container_id_list, self.remote_ssh)
                 timeptr += 1  # current emulating time
+                time.sleep(0.5)
                 if timeptr >= self.duration:
                     return
         fi.close()
@@ -640,6 +694,8 @@ class sn_Emulation_Start_Thread(threading.Thread):
             ping_thread.join()
         for perf_thread in perf_threads:
             perf_thread.join()
+        for traceroute_thread in traceroute_threads:
+            traceroute_thread.join()
 
 
 def sn_check_utility(time_index, remote_ssh, file_path):
@@ -647,7 +703,11 @@ def sn_check_utility(time_index, remote_ssh, file_path):
     f = open(file_path + "/utility-info" + "_" + str(time_index) + ".txt", "w")
     f.writelines(result)
     f.close()
-
+    
+def sn_setup_gw_iperf_server(gw, container_id_list, remote_ssh):
+    sn_remote_cmd(remote_ssh, 'docker exec -id ' + str(container_id_list[gw - 1]) + ' iperf3 -s -p 5201')
+    print("iperf server success")
+    print("Command: docker exec -id " + str(container_id_list[gw - 1]) + " iperf3 -s -p 5201")
 
 def sn_update_delay(file_path, configuration_file_path, timeptr,
                     constellation_size, remote_ssh,
@@ -770,7 +830,7 @@ def sn_handover_overhead(src, handover_delay, constellation_size, container_id_l
         str(handover_delay) + " && sudo tc qdisc del dev " + "B" + str(src) +
         "-default root\" > /dev/null &")
     
-def sn_perf(src, des, time_index, target_throughput, constellation_size, container_id_list,
+def sn_perf(src, des, time_index, target_throughput, gw_list, constellation_size, container_id_list,
             file_path, configuration_file_path, remote_ssh):
     if des <= constellation_size:
         ifconfig_output = sn_remote_cmd(
@@ -786,10 +846,12 @@ def sn_perf(src, des, time_index, target_throughput, constellation_size, contain
             " ifconfig B" + str(des) +
             "-default |awk -F '[ :]+' 'NR==2{print $4}'")
 
-    sn_remote_cmd(
-        remote_ssh,
-        "docker exec -id " + str(container_id_list[des - 1]) + " iperf3 -s ")
-    print("iperf server success")
+    if des not in gw_list:
+        sn_remote_cmd(
+            remote_ssh,
+            "docker exec -id " + str(container_id_list[des - 1]) + " iperf3 -s ")
+        print("iperf server success (on the fly)")
+
     perf_result = sn_remote_cmd(
         remote_ssh, "docker exec -i " + str(container_id_list[src - 1]) +
         " iperf3 -c " + str(des_IP[0][:-1]) + " -t 5 -b " + str(target_throughput) + "M")
@@ -802,6 +864,33 @@ def sn_perf(src, des, time_index, target_throughput, constellation_size, contain
         configuration_file_path + "/" + file_path + "/perf-" + str(src) + "-" +
         str(des) + "_" + str(time_index) + ".txt", "w")
     f.writelines(perf_result)
+    f.close()
+    
+def sn_traceroute(src, des, time_index, constellation_size, container_id_list,
+                  file_path, configuration_file_path, remote_ssh):
+    if des <= constellation_size:
+        ifconfig_output = sn_remote_cmd(
+            remote_ssh, "docker exec -it " + str(container_id_list[des - 1]) +
+            " ifconfig | sed 's/[ \t].*//;/^\(eth0\|\)\(lo\|\)$/d'")
+        des_IP = sn_remote_cmd(
+            remote_ssh, "docker exec -it " + str(container_id_list[des - 1]) +
+            " ifconfig " + ifconfig_output[0][:-1] +
+            "|awk -F '[ :]+' 'NR==2{print $4}'")
+    else:
+        des_IP = sn_remote_cmd(
+            remote_ssh, "docker exec -it " + str(container_id_list[des - 1]) +
+            " ifconfig B" + str(des) +
+            "-default |awk -F '[ :]+' 'NR==2{print $4}'")
+        
+    traceroute_result = sn_remote_cmd(
+        remote_ssh,
+        "docker exec -id " + str(container_id_list[des - 1]) + 
+        " traceroute " + str(des_IP[0][:-1]))
+    print ("traceroute success")
+    
+    f = open(configuration_file_path + "/" + file_path + "/traceroute-" + str(src) + "-" +
+             str(des) + "_" + str(time_index) + ".txt", "w")
+    f.writelines(traceroute_result)
     f.close()
 
 
@@ -868,8 +957,14 @@ def sn_establish_new_GSL(container_id_list, matrix, constellation_size, bw,
     print('[Add current node:]' + 'docker network connect ' + GSL_name + " " +
           str(container_id_list[i - 1]) + " --ip 9." + str(address_16_23) +
           "." + str(address_8_15) + ".50")
+    
+    # Fix bug: workaround to delete the unwanted route added by BIRD
     sn_remote_cmd(
-        remote_ssh, 'docker network connect ' + GSL_name + " " +
+        remote_ssh, "docker exec -d " + str(container_id_list[j - 1]) +
+        " ip route del 9." + str(address_16_23) + "." + str(address_8_15) + ".0/24")
+    
+    sn_remote_cmd(
+        remote_ssh, "docker network connect " + GSL_name + " " +
         str(container_id_list[j - 1]) + " --ip 9." + str(address_16_23) + "." +
         str(address_8_15) + ".60")
     ifconfig_output = sn_remote_cmd(

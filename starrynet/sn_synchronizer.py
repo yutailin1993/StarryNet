@@ -14,7 +14,9 @@ class StarryNet():
                  configuration_file_path,
                  GS_lat_long,
                  hello_interval=10,
-                 AS=[]):
+                 AS=[],
+                 gw_list=[],
+                 cell_list=[]):
         # Initialize constellation information.
         sn_args = sn_load_file(configuration_file_path, GS_lat_long)
         self.name = sn_args.cons_name
@@ -40,11 +42,14 @@ class StarryNet():
         self.sat_ground_loss = sn_args.sat_ground_loss
         self.ground_num = sn_args.ground_num
         self.multi_machine = sn_args.multi_machine
-        self.antenna_number = sn_args.antenna_number
+        self.gw_antenna_number = sn_args.gw_antenna_number
+        self.cell_antenna_number  = sn_args.cell_antenna_number
         self.antenna_inclination = sn_args.antenna_inclination
         self.container_global_idx = 1
         self.hello_interval = hello_interval
         self.AS = AS
+        self.gw_list = gw_list
+        self.cell_list = cell_list
         self.configuration_file_path = os.path.dirname(
             os.path.abspath(configuration_file_path))
         self.file_path = './' + sn_args.cons_name + '-' + str(
@@ -55,8 +60,10 @@ class StarryNet():
         self.observer = Observer(self.file_path, self.configuration_file_path,
                                  self.inclination, self.satellite_altitude,
                                  self.orbit_number, self.sat_number,
-                                 self.duration, self.antenna_number,
-                                 GS_lat_long, self.antenna_inclination,
+                                 self.duration, self.gw_antenna_number,
+                                 self.cell_antenna_number, self.gw_list, 
+                                 self.cell_list, GS_lat_long, 
+                                 self.antenna_inclination,
                                  self.intra_routing, self.hello_interval,
                                  self.AS)
         self.docker_service_name = 'constellation-test'
@@ -99,6 +106,10 @@ class StarryNet():
         self.recovery_time = []
         self.route_src = []
         self.route_time = []
+        
+        self.traceroute_src = []
+        self.traceroute_dst = []
+        self.traceroute_time = []
 
         # Initiate a working directory
         sn_thread = sn_init_directory_thread(self.file_path,
@@ -222,6 +233,11 @@ class StarryNet():
         self.ping_src.append(sat1_index)
         self.ping_des.append(sat2_index)
         self.ping_time.append(time_index)
+        
+    def set_traceroute(self, src, dst, time_index):
+        self.traceroute_src.append(src)
+        self.traceroute_dst.append(dst)
+        self.traceroute_time.append(time_index)
 
     def set_perf(self, sat1_index, sat2_index, time_index, target_throughput=None):
         self.perf_src.append(sat1_index)
@@ -237,7 +253,7 @@ class StarryNet():
         sn_thread = sn_Emulation_Start_Thread(
             self.remote_ssh, self.remote_ftp, self.sat_loss,
             self.sat_ground_bandwidth, self.sat_ground_loss,
-            self.container_id_list, self.file_path,
+            self.gw_list, self.cell_list, self.container_id_list, self.file_path,
             self.configuration_file_path, self.update_interval,
             self.constellation_size, self.ping_src, self.ping_des,
             self.ping_time, self.handover_srcs, self.handover_delays,
@@ -245,7 +261,8 @@ class StarryNet():
             self.sr_time, self.damage_ratio, self.damage_time,
             self.damage_list, self.recovery_time, self.route_src,
             self.route_time, self.duration, self.utility_checking_time,
-            self.perf_src, self.perf_des, self.perf_time, self.perf_throughputs)
+            self.perf_src, self.perf_des, self.perf_time, self.perf_throughputs,
+            self.traceroute_src, self.traceroute_dst, self.traceroute_time)
         sn_thread.start()
         sn_thread.join()
 
