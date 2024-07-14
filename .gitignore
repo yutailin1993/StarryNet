@@ -60,3 +60,5 @@ starlink*
 /starrynet.egg-info/
 /sim_configs/
 /logs/
+/results/
+/.vscode/
