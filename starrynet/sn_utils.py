@@ -8,6 +8,7 @@ from time import sleep
 import time
 import numpy
 import random
+import sys
 """
 Starrynet utils that are used in sn_synchronizer
 author: Yangtao Deng (dengyt21@mails.tsinghua.edu.cn) and Zeqi Lai (zeqilai@tsinghua.edu.cn)
@@ -426,6 +427,10 @@ class sn_Emulation_Start_Thread(threading.Thread):
                 print('Emulation in No.' + str(timeptr) + ' second.')
                 # the time when the new change occurrs
                 current_time = str(int(words[1][:-1]))
+                # Wait for user input to stop the script
+                print ("[EXP STOP] Current time: " + str(timeptr))
+                sys.stdin.readline()
+                
                 while int(current_time) > timeptr:
                     start_time = time.time()
                     if timeptr in self.utility_checking_time:

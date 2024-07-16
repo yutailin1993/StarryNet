@@ -1,5 +1,6 @@
 import argparse
 import subprocess
+import time
 import numpy as np
 
 class ExpOps():
@@ -39,8 +40,8 @@ class ExpOps():
         else:
             # save iperf results
             command = ['docker', 'exec', '-d', src_container, 'bash', '-c', 
-                'iperf3 -c {} -p 5201 -i {} -b {}M -t 0 > /tmp/iperf_{}_{}_results.txt'.format(
-                dst_addr, 1.5, demand, src, dst)]
+                'iperf3 -c {} -p 5201 -i {} -b {}M -t 0 > /tmp/iperf_{}_{}_{}_results.txt'.format(
+                dst_addr, 1.5, demand, self.current_time, src, dst)]
         
         result = subprocess.run(command, capture_output=False, text=True)
         
@@ -65,8 +66,8 @@ class ExpOps():
         dst_addr = '9.{}.{}.10'.format(dst, dst)
         
         command = ['docker', 'exec', '-d', src_container, 'bash', '-c',
-            'ping -c {} {} > /tmp/ping_{}_{}_results.txt'.format(
-            ping_count, dst_addr, src, dst)]
+            'ping -c {} {} > /tmp/ping_{}_{}_{}_results.txt'.format(
+            ping_count, dst_addr, self.current_time, src, dst)]
         
         result = subprocess.run(command, capture_output=False, text=True)
         
@@ -104,39 +105,38 @@ class ExpOps():
         for cell_idx, cell in enumerate(self.cell_indices):
             src = cell
             dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
-            file_name = 'traceroute_{}_{}.txt'.format(src, dst)
+            file_name = 'traceroute_{}_{}_{}.txt'.format(self.current_time, src, dst)
             
             result = self._establish_traceroute(src, dst)
             
-            with open(self.results_dir + file_name, 'w') as file:
+            with open(self.results_dir + 'traceroute/' + file_name, 'w') as file:
                 file.writelines(result)
     
     def collect_results(self):
-        for cell_idx, cell in enumerate(self.cell_indices):
-            src = cell
-            dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
-            src_container = self.container_name_prefix + str(cell)
-            result_file = 'iperf_{}_{}_results.txt'.format(src, dst)
-            command = ['docker', 'cp', 
-                       '{}:/tmp/{}'.format(src_container, result_file), 
-                       '{}{}'.format(self.results_dir, result_file)]
-            
-            subprocess.run(command, capture_output=False, text=True)
+        if self.perf_client_on is True:
+            for cell_idx, cell in enumerate(self.cell_indices):
+                src = cell
+                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
+                src_container = self.container_name_prefix + str(cell)
+                result_file = 'iperf_{}_{}_{}_results.txt'.format(self.current_time, src, dst)
+                command = ['docker', 'cp', 
+                           '{}:/tmp/{}'.format(src_container, result_file), 
+                           '{}iperf/{}'.format(self.results_dir, result_file)]
+
+                subprocess.run(command, capture_output=False, text=True)
         
-        if self.set_ping_on is False:
-            return
-        
-        for cell_idx, cell in enumerate(self.cell_indices):
-            src = cell
-            dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
-            src_container = self.container_name_prefix + str(cell)
-            
-            result_file = 'ping_{}_{}_results.txt'.format(src, dst)
-            command = ['docker', 'cp', 
-                       '{}:/tmp/{}'.format(src_container, result_file),
-                       '{}{}'.format(self.results_dir, result_file)]
-            
-            subprocess.run(command, capture_output=False, text=True)
+        if self.set_ping_on is True:
+            for cell_idx, cell in enumerate(self.cell_indices):
+                src = cell
+                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
+                src_container = self.container_name_prefix + str(cell)
+
+                result_file = 'ping_{}_{}_{}_results.txt'.format(self.current_time, src, dst)
+                command = ['docker', 'cp', 
+                           '{}:/tmp/{}'.format(src_container, result_file),
+                           '{}ping/{}'.format(self.results_dir, result_file)]
+
+                subprocess.run(command, capture_output=False, text=True)
             
     def stop_perf_clients(self):
         for cell in self.cell_indices:
@@ -180,9 +180,19 @@ def main():
     exp_ops = ExpOps(current_time, demands, assignments, results_dir,
                      gw_indices, cell_indices)
     
+    print("start traceroute")
+    exp_ops.perform_traceroute()
+    time.sleep(10)
+    print("traceroute done")
+    
+    print("start ping") 
+    exp_ops.set_ping()
+    time.sleep(10)
+    print("ping done")
+    
     # exp_ops.perform_flood(safe_result=True)
     
-    # exp_ops.collect_results()
+    exp_ops.collect_results()
     
 if __name__ == "__main__":
     main()

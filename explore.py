@@ -72,9 +72,9 @@ if __name__ == '__main__':
     # for t_idx, t in enumerate(assignments_time):
     #     sn.set_ping(cell_indices[0], gw_indices[assignments[t_idx, 0]], t)
     
-    for t_idx, t in enumerate(assignments_time):
-        sn.set_perf(cell_indices[1], gw_indices[assignments[t_idx, 1]], 
-                    t, demands[t_idx, 1])
+    # for t_idx, t in enumerate(assignments_time):
+    #     sn.set_perf(cell_indices[1], gw_indices[assignments[t_idx, 1]], 
+    #                 t, demands[t_idx, 1])
     
     # for t in range(12, 25):
     #     sn.set_ping(111, 104, t)
