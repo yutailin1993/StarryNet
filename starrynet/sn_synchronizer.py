@@ -13,6 +13,9 @@ class StarryNet():
     def __init__(self,
                  configuration_file_path,
                  GS_lat_long,
+                 handover_type,
+                 assigned_gw,
+                 demands,
                  hello_interval=10,
                  AS=[],
                  gw_list=[],
@@ -26,7 +29,7 @@ class StarryNet():
         self.sat_number = sn_args.sat_number
         self.fac_num = sn_args.fac_num
         self.constellation_size = self.orbit_number * self.sat_number
-        self.node_size = self.orbit_number * self.sat_number + sn_args.fac_num
+        self.node_size = self.orbit_number * self.sat_number + sn_args.ground_num
         self.link_style = sn_args.link_style
         self.IP_version = sn_args.IP_version
         self.link_policy = sn_args.link_policy
@@ -46,6 +49,9 @@ class StarryNet():
         self.cell_antenna_number  = sn_args.cell_antenna_number
         self.antenna_inclination = sn_args.antenna_inclination
         self.container_global_idx = 1
+        self.assigned_gw = assigned_gw
+        self.demands = demands
+        self.handover_type = handover_type
         self.hello_interval = hello_interval
         self.AS = AS
         self.gw_list = gw_list
@@ -90,7 +96,7 @@ class StarryNet():
         self.ping_des = []
         self.ping_time = []
         self.handover_srcs = []
-        self.handover_delays = []
+        self.handover_targets = []
         self.handover_times = []
         self.perf_src = []
         self.perf_des = []
@@ -143,7 +149,62 @@ class StarryNet():
             self.sat_ground_bandwidth, self.sat_loss, self.sat_ground_loss)
         isl_thread.start()
         isl_thread.join()
+        # self._create_core_network()
         print("Link initialization done.")
+        
+    def _create_core_network(self):
+        print ("Create Core Network.")
+        # create links for Gateway to core network
+        core_node = self.constellation_size + self.fac_num + 1 # core node ID (not idx)
+        core_network = "CORE_NETWORK"
+    
+        os.system('docker network create ' + core_network +
+                  ' --subnet 9.{}.{}.0/24'.format(core_node, core_node))
+        print ("[Create core network:]" + "docker network create " + core_network + 
+               " --subnet 9.{}.{}.0/24".format(core_node, core_node))
+        os.system('docker network connect ' + core_network + ' ' + 
+                  str(self.container_id_list[core_node - 1]) + ' --ip 9.' +
+                  str(core_node) + '.' + str(core_node) + '.10')
+    
+        with os.popen(
+            "docker exec -it " + str(self.container_id_list[core_node - 1]) +
+            " ip addr | grep -B 2 9." + str(core_node) + "." + str(core_node) +
+            ".10 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'"
+        ) as f:
+            ifconfig_output = f.readline()
+            target_interface = str(ifconfig_output).split("@")[0]
+            os.system('docker exec -d ' + str(self.container_id_list[core_node - 1]) +
+                      ' ip link set dev ' + target_interface + ' down')
+            os.system('docker exec -d ' + str(self.container_id_list[core_node - 1]) +
+                      ' ip link set dev ' + target_interface + ' name ' + 'B' +
+                      str(core_node) + '-core')
+            os.system('docker exec -d ' + str(self.container_id_list[core_node - 1]) +
+                      ' ip link set dev B' + str(core_node) + '-core up')
+        print ("[Add core network node:] " + "docker network connect " + core_network +
+                " " + str(self.container_id_list[core_node - 1]) + " --ip 9." + 
+                str(core_node) + "." + str(core_node) + ".10")
+        
+        for j in range(self.constellation_size + 1, self.constellation_size + len(self.gw_list) + 1):
+            os.system('docker network connect ' + core_network + ' ' +
+                      str(self.container_id_list[j - 1]) + ' --ip 9.' + str(core_node) + '.' +
+                      str(core_node) + '.' + str(j))
+            with os.popen(
+                'docker exec -it ' + str(self.container_id_list[j - 1]) +
+                ' ip addr | grep -B 2 9.' + str(core_node) + '.' + str(core_node) +
+                '.' + str(j) + " | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'"
+            ) as f:
+                ifconfig_output = f.readline()
+                target_interface = str(ifconfig_output).split("@")[0]
+                os.system('docker exec -d ' + str(self.container_id_list[j - 1]) +
+                          ' ip link set dev ' + target_interface + ' down')
+                os.system('docker exec -d ' + str(self.container_id_list[j - 1]) +
+                          ' ip link set dev ' + target_interface + ' name ' + 'B' +
+                          str(j) + '-core')
+                os.system('docker exec -d ' + str(self.container_id_list[j - 1]) +
+                          ' ip link set dev B' + str(j) + '-core up')
+            print ("[Add current node to core:]" + "docker network connect " + core_network +
+                   " " + str(self.container_id_list[j - 1]) + " --ip 9." + str(core_node) + "." +
+                   str(core_node) + "." + str(j))
 
     def run_routing_deamon(self):
         routing_thread = sn_Routing_Init_Thread(
@@ -221,13 +282,10 @@ class StarryNet():
         self.sr_target.append(next_hop_sat)
         self.sr_time.append(time_index)
         
-    def set_handover_delays(self, src, time_index, delay=None):
+    def set_handover(self, src, target, time_index):
         self.handover_srcs.append(src)
+        self.handover_targets.append(target)
         self.handover_times.append(time_index)
-        if delay is None:
-            self.handover_delays.append(0.58)
-        else:
-            self.handover_delays.append(delay)
 
     def set_ping(self, sat1_index, sat2_index, time_index):
         self.ping_src.append(sat1_index)
@@ -252,11 +310,11 @@ class StarryNet():
         # Start emulation in a new thread.
         sn_thread = sn_Emulation_Start_Thread(
             self.remote_ssh, self.remote_ftp, self.sat_loss,
-            self.sat_ground_bandwidth, self.sat_ground_loss,
+            self.sat_ground_bandwidth, self.sat_ground_loss, self.assigned_gw, self.demands,
             self.gw_list, self.cell_list, self.container_id_list, self.file_path,
             self.configuration_file_path, self.update_interval,
             self.constellation_size, self.ping_src, self.ping_des,
-            self.ping_time, self.handover_srcs, self.handover_delays,
+            self.ping_time, self.handover_srcs, self.handover_targets, self.handover_type,
             self.handover_times, self.sr_src, self.sr_des, self.sr_target,
             self.sr_time, self.damage_ratio, self.damage_time,
             self.damage_list, self.recovery_time, self.route_src,
@@ -265,6 +323,9 @@ class StarryNet():
             self.traceroute_src, self.traceroute_dst, self.traceroute_time)
         sn_thread.start()
         sn_thread.join()
+        
+        sn_thread.stop_network_traffic()
+        sn_thread.collect_results()
 
     def stop_emulation(self):
         # Stop emulation in a new thread.

@@ -1,4 +1,5 @@
 import os
+import subprocess
 import threading
 import sys
 from time import sleep
@@ -277,12 +278,12 @@ def sn_get_container_info():
     return container_id_list
 
 
-def sn_establish_GSL(container_id_list, matrix, GS_num, constellation_size, bw,
+def sn_establish_GSL(container_id_list, matrix, fac_num, constellation_size, bw,
                      loss):
     # starting links among satellites and ground stations
     for i in range(1, constellation_size + 1):
         for j in range(constellation_size + 1,
-                       constellation_size + GS_num + 1):
+                       constellation_size + fac_num + 1):
             # matrix[i-1][j-1])==1 means a link between node i and node j
             if ((float(matrix[i - 1][j - 1])) <= 0.01):
                 continue
@@ -350,7 +351,7 @@ def sn_establish_GSL(container_id_list, matrix, GS_num, constellation_size, bw,
             print('[Add right node:]' + 'docker network connect ' + GSL_name +
                   " " + str(container_id_list[j - 1]) + " --ip 9." +
                   str(address_16_23) + "." + str(address_8_15) + ".60")
-    for j in range(constellation_size + 1, constellation_size + GS_num + 1):
+    for j in range(constellation_size + 1, constellation_size + fac_num + 1):
         GS_name = "GS_" + str(j)
         # Create default network and interface for GS.
         os.system('docker network create ' + GS_name + " --subnet 9." +
@@ -385,8 +386,12 @@ def sn_copy_run_conf(container_idx, Path, current, total):
               str(container_idx) + ":/B" + str(current + 1) + ".conf")
     print("[" + str(current + 1) + "/" + str(total) + "]" +
           " docker cp bird.conf " + str(container_idx) + ":/bird.conf")
-    os.system("docker exec -it " + str(container_idx) + " bird -c B" +
-              str(current + 1) + ".conf")
+    command = ['docker', 'exec', '-i', str(container_idx), 'bird', '-c',
+               'B{}.conf'.format(current + 1)]
+    
+    result = subprocess.run(command, capture_output=False, text=True)
+    # os.system("docker exec -it " + str(container_idx) + " bird -c B" +
+    #           str(current + 1) + ".conf")
     print("[" + str(current + 1) + "/" + str(total) +
           "] Bird routing process for container: " + str(container_idx) +
           " has started. ")
@@ -397,7 +402,8 @@ def sn_copy_run_conf_to_each_container(container_id_list, sat_node_number,
     print(
         "Copy bird configuration file to each container and run routing process."
     )
-    total = len(container_id_list)
+    # total = len(container_id_list)
+    total = sat_node_number + fac_node_number
     copy_threads = []
     for current in range(0, total):
         copy_thread = threading.Thread(
@@ -547,7 +553,7 @@ if __name__ == '__main__':
         orbit_num = int(sys.argv[1])
         sat_num = int(sys.argv[2])
         constellation_size = int(sys.argv[3])
-        GS_num = int(sys.argv[4])
+        fac_num = int(sys.argv[4])
         sat_bandwidth = float(sys.argv[5])
         sat_loss = float(sys.argv[6])
         sat_ground_bandwidth = float(sys.argv[7])
@@ -557,7 +563,7 @@ if __name__ == '__main__':
         container_id_list = sn_get_container_info()
         sn_establish_ISLs(container_id_list, matrix, orbit_num, sat_num,
                           constellation_size, sat_bandwidth, sat_loss)
-        sn_establish_GSL(container_id_list, matrix, GS_num, constellation_size,
+        sn_establish_GSL(container_id_list, matrix, fac_num, constellation_size,
                          sat_ground_bandwidth, sat_ground_loss)
     elif len(sys.argv) == 4:
         if sys.argv[3] == "update":
@@ -568,11 +574,11 @@ if __name__ == '__main__':
             sn_update_delay(matrix, container_id_list, constellation_size)
         else:
             constellation_size = int(sys.argv[1])
-            GS_num = int(sys.argv[2])
+            fac_num = int(sys.argv[2])
             path = sys.argv[3]
             container_id_list = sn_get_container_info()
             sn_copy_run_conf_to_each_container(container_id_list,
-                                               constellation_size, GS_num,
+                                               constellation_size, fac_num,
                                                path)
     elif len(sys.argv) == 2:
         path = sys.argv[1]

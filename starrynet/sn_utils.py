@@ -9,6 +9,8 @@ import time
 import numpy
 import random
 import sys
+import subprocess
+import re
 """
 Starrynet utils that are used in sn_synchronizer
 author: Yangtao Deng (dengyt21@mails.tsinghua.edu.cn) and Zeqi Lai (zeqilai@tsinghua.edu.cn)
@@ -359,11 +361,11 @@ class sn_Routing_Init_Thread(threading.Thread):
 class sn_Emulation_Start_Thread(threading.Thread):
 
     def __init__(self, remote_ssh, remote_ftp, sat_loss, sat_ground_bw,
-                 sat_ground_loss, gw_list, cell_list, container_id_list, file_path,
-                 configuration_file_path, update_interval, constellation_size,
-                 ping_src, ping_des, ping_time, handover_srcs, handover_delays, handover_times, 
-                 sr_src, sr_des, sr_target, sr_time, damage_ratio, damage_time, damage_list,
-                 recovery_time, route_src, route_time, duration,
+                 sat_ground_loss, assigned_gw, demands, gw_list, cell_list, container_id_list,
+                 file_path, configuration_file_path, update_interval, constellation_size,
+                 ping_src, ping_des, ping_time, handover_srcs, handover_targets, handover_type,
+                 handover_times, sr_src, sr_des, sr_target, sr_time, damage_ratio, 
+                 damage_time, damage_list, recovery_time, route_src, route_time, duration,
                  utility_checking_time, perf_src, perf_des, perf_time, perf_throughputs,
                  traceroute_src, traceroute_dst, traceroute_time):
         threading.Thread.__init__(self)
@@ -372,6 +374,8 @@ class sn_Emulation_Start_Thread(threading.Thread):
         self.sat_loss = sat_loss
         self.sat_ground_bw = sat_ground_bw
         self.sat_ground_loss = sat_ground_loss
+        self.assigned_gw = assigned_gw
+        self.demands = demands
         self.gw_list = gw_list
         self.cell_list = cell_list
         self.container_id_list = copy.deepcopy(container_id_list)
@@ -383,7 +387,8 @@ class sn_Emulation_Start_Thread(threading.Thread):
         self.ping_des = ping_des
         self.ping_time = ping_time
         self.handover_srcs = handover_srcs
-        self.handover_delays = handover_delays
+        self.handover_targets = handover_targets
+        self.handover_type = handover_type
         self.handover_times = handover_times
         self.perf_src = perf_src
         self.perf_des = perf_des
@@ -407,6 +412,107 @@ class sn_Emulation_Start_Thread(threading.Thread):
         if self.container_id_list == []:
             self.container_id_list = sn_get_container_info(self.remote_ssh)
 
+    def _establish_perf(self, src, dst, demand):
+        assert dst in self.gw_list
+        src_container = self.container_id_list[src - 1]
+        gw_container = self.container_id_list[dst - 1]
+        dst_addr = '9.{}.{}.10'.format(dst, dst)
+        
+        command = ['docker', 'exec', '-d', gw_container, 'bash', '-c',
+                   'iperf3 -s -p 5{}'.format(src)]
+        subprocess.run(command, capture_output=False, text=True)
+        
+        command = ['docker', 'exec', '-d', src_container, 'bash', '-c',
+                   'iperf3 -c {} -p 5{} -i {} -b {}M -t 0 > /tmp/iperf_{}_{}_result.txt'.format(
+                   dst_addr, src, 1.0, demand, src, dst)]
+        
+        result = subprocess.run(command, capture_output=True, text=True)
+        
+        return result
+    
+    def _stop_perf(self, src):
+        src_container = self.container_id_list[src - 1]
+        command = ['docker', 'exec', '-i', src_container, 'bash', '-c', 
+                   'ps aux | grep \'iperf3 -c\' | awk \'{print $2}\'']
+        proc_result = subprocess.run(command, capture_output=True, text=True)
+        proc_list = proc_result.stdout.split('\n')[:-1]
+        
+        if len(proc_list) < 2:
+            print ("No iperf process found on container " + src_container)
+            return
+        
+        command = ['docker', 'exec', '-i', src_container, 'bash', '-c',
+                   'kill {}'.format(proc_list[1])]
+        result = subprocess.run(command, capture_output=True, text=True)
+        
+        return result.stdout, result.stderr
+        
+    def _establish_ping(self, src, dst):
+        assert dst in self.gw_list
+        src_container = self.container_id_list[src - 1]
+        dst_addr = '9.{}.{}.10'.format(dst, dst)
+        
+        command = ['docker', 'exec', '-d', src_container, 'bash', '-c',
+                   'ping {} > /tmp/ping_{}_{}_result.txt'.format(
+                    dst_addr, src, dst)]
+        
+        result = subprocess.run(command, capture_output=True, text=True)
+        
+        return result
+    
+    def _stop_ping(self, src):
+        src_container = self.container_id_list[src - 1]
+        command = ['docker', 'exec', '-i', src_container, 'bash', '-c',
+                   'ps aux | grep \'ping\' | awk \'{print $2}\'']
+        proc_result = subprocess.run(command, capture_output=True, text=True)
+        proc_list = proc_result.stdout.split('\n')[:-1]
+        if len(proc_list) < 2:
+            print ("No ping process found on container " + src_container)
+            return
+        
+        command = ['docker', 'exec', '-i', src_container, 'bash', '-c',
+                   'kill {}'.format(proc_list[1])]
+        result = subprocess.run(command, capture_output=True, text=True)
+        
+        return result.stdout, result.stderr
+        
+    def stop_network_traffic(self):
+        for cell in self.cell_list:
+            _, _ = self._stop_perf(cell)
+            _, _ = self._stop_ping(cell)
+    
+    def collect_results(self):
+        print ("Collecting results...")
+        for idx, cell in enumerate(self.cell_list):
+            src = cell
+            dst = self.gw_list[int(self.assigned_gw[idx])]
+            src_container = self.container_id_list[src - 1]
+            perf_file = 'iperf_{}_{}_result.txt'.format(src, dst)
+            ping_file = 'ping_{}_{}_result.txt'.format(src, dst)
+            os.system('docker cp ' + src_container + ':/tmp/' + perf_file + ' ' +
+                      './results/iperf/' + perf_file)
+            os.system('docker cp ' + src_container + ':/tmp/' + ping_file + ' ' +
+                      './results/ping/' + ping_file)
+            
+    def GSL_link_occupied(self, gs_id):
+        container = self.container_id_list[gs_id - 1]
+        pattern = r'B{}-eth\d+@'.format(gs_id)
+        
+        if gs_id in self.gw_list:
+            max_link = 3
+        else:
+            max_link = 1
+        
+        command = ['docker', 'exec', '-i', container, 'ip', 'addr']
+        result = subprocess.run(command, capture_output=True, text=True)
+        output = result.stdout
+        link_list = re.findall(pattern, output)
+        
+        if len(link_list) >= max_link:
+            return True
+        
+        return False
+            
     def run(self):
         ping_threads = []
         perf_threads = []
@@ -414,10 +520,24 @@ class sn_Emulation_Start_Thread(threading.Thread):
         timeptr = 2  # current emulating time
         
         # init gateway iperf server
-        for gw in self.gw_list:
-            print('Setting up iperf server on gateway ' + str(gw) + '...')
-            sn_setup_gw_iperf_server(gw, self.container_id_list, self.remote_ssh)
-        
+        # for gw in self.gw_list:
+        #     print("Setting up iperf server on gateway " + str(gw) + "...")
+        #     sn_setup_gw_iperf_server(gw, self.container_id_list, self.remote_ssh)
+        #     
+        # print ("Wait 30 seconds for iperf server to start...")
+        # sleep(10)
+            
+        for idx, cell in enumerate(self.cell_list):
+            print("Setting up iperf client on cell " + str(cell) + "...")
+            target_gw = self.gw_list[int(self.assigned_gw[idx])]
+            demand = self.demands[idx]
+            self._establish_perf(cell, target_gw, demand)
+            
+        for idx, cell in enumerate(self.cell_list):
+            print("Setting up ping on cell " + str(cell) + "...")
+            target_gw = self.gw_list[int(self.assigned_gw[idx])]
+            self._establish_ping(cell, target_gw)
+       
         topo_change_file_path = self.configuration_file_path + "/" + self.file_path + '/Topo_leo_change.txt'
         fi = open(topo_change_file_path, 'r')
         line = fi.readline()
@@ -428,8 +548,8 @@ class sn_Emulation_Start_Thread(threading.Thread):
                 # the time when the new change occurrs
                 current_time = str(int(words[1][:-1]))
                 # Wait for user input to stop the script
-                print ("[EXP STOP] Current time: " + str(timeptr))
-                sys.stdin.readline()
+                # print ("[EXP STOP] Current time: " + str(timeptr))
+                # sys.stdin.readline()
                 
                 while int(current_time) > timeptr:
                     start_time = time.time()
@@ -471,11 +591,18 @@ class sn_Emulation_Start_Thread(threading.Thread):
                             if val == timeptr
                         ]
                         for index_num in index:
-                            sn_handover_overhead(self.handover_srcs[index_num],
-                                                 self.handover_delays[index_num],
-                                                 self.constellation_size,
-                                                 self.container_id_list,
-                                                 self.remote_ssh)
+                            cell_id = self.handover_srcs[index_num]
+                            target_sat_id = self.handover_targets[index_num]
+                            gw = self.gw_list[int(self.assigned_gw[self.cell_list.index(cell_id)])]
+                            sn_handover(cell_id,
+                                        target_sat_id,
+                                        gw,
+                                        self.handover_type,
+                                        self.constellation_size,
+                                        self.container_id_list,
+                                        self.file_path,
+                                        self.sat_ground_bw,
+                                        0,)
                     if timeptr in self.ping_time:
                         if timeptr in self.ping_time:
                             index = [
@@ -569,6 +696,16 @@ class sn_Emulation_Start_Thread(threading.Thread):
                         s = f
                         f = tmp
                     print("add link", s, f)
+                    # workaround: avoid establishing excessive links
+                    # if not self.GSL_link_occupied(f):
+                    #     current_topo_path = self.configuration_file_path + "/" + self.file_path + '/delay/' + str(
+                    #         current_time) + '.txt'
+                    #     matrix = sn_get_param(current_topo_path)
+                    #     sn_establish_new_GSL(self.container_id_list, matrix,
+                    #                          self.constellation_size,
+                    #                          self.sat_ground_bw,
+                    #                          self.sat_ground_loss, s, f,
+                    #                          self.remote_ssh)
                     current_topo_path = self.configuration_file_path + "/" + self.file_path + '/delay/' + str(
                         current_time) + '.txt'
                     matrix = sn_get_param(current_topo_path)
@@ -593,6 +730,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                         f = tmp
                     print("del link " + str(s) + "-" + str(f) + "\n")
                     sn_del_link(s, f, self.container_id_list, self.remote_ssh)
+                    
                     line = fi.readline()
                     words = line.split()
                     if len(words) == 0:
@@ -818,22 +956,134 @@ def sn_ping(src, des, time_index, constellation_size, container_id_list,
     f.writelines(ping_result)
     f.close()
 
-def sn_handover_overhead(src, handover_delay, constellation_size, container_id_list,
-                remote_ssh):
-    if src <= constellation_size:
-        return False
+def calculate_handover_delay(curr_backhaul_delay, target_backhaul_delay, 
+                             curr_comm_delay, target_comm_delay, handover_type):
+    if handover_type == 'CU':
+        delay = 2*curr_comm_delay + 1*target_comm_delay + 6*curr_backhaul_delay + 8*target_backhaul_delay
+    elif handover_type == 'DU':
+        delay = 2*curr_comm_delay + 1*target_comm_delay + 5*curr_backhaul_delay + 3*target_backhaul_delay
+    else:
+        raise ValueError("Invalid handover type.")
     
-    sn_remote_cmd(
-        remote_ssh, "docker exec -it " + str(container_id_list[src - 1]) +
-        "sudo tc qdisc add dev " + "B" + str(src) + 
-        "-default root netem loss 100% && nohup bash -c \"sleep " + 
-        str(handover_delay) + " && sudo tc qdisc del dev " + "B" + str(src) +
-        "-default root\" > /dev/null &")
-    print('[Apply handover overhead:]' + "docker exec -it " + str(container_id_list[src - 1]) +
-        "sudo tc qdisc add dev " + "B" + str(src) + 
-        "-default root netem loss 100% && nohup bash -c \"sleep " + 
-        str(handover_delay) + " && sudo tc qdisc del dev " + "B" + str(src) +
-        "-default root\" > /dev/null &")
+    return delay
+
+def connect_node_to_GSL_link(container_id_list, GSL_name, node_type, sat_id, cell_id,
+                             address_16_23, address_8_15, delay, bw, loss):
+    if node_type == 'sat':
+        last_octet = str(50)
+        node_id = sat_id
+        interface_name = 'B' + str(sat_id) + '-eth' + str(cell_id)
+    elif node_type == 'cell':
+        last_octet = str(60)
+        node_id = cell_id
+        interface_name = 'B' + str(cell_id) + '-eth' + str(sat_id)
+    else:
+        raise ValueError("Invalid node type.")
+    
+    os.system('docker network connect ' + GSL_name + ' ' + 
+              str(container_id_list[node_id - 1]) + ' --ip 9.' + str(address_16_23) + 
+              '.' + str(address_8_15) + '.' + last_octet)
+    with os.popen('docker exec -i ' + str(container_id_list[node_id - 1]) +
+                  ' ip addr | grep -B 2 9.' + str(address_16_23) + '.' +
+                  str(address_8_15) +
+                  ".50 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
+        ifconfig_output = f.readline()
+    target_interface = str(ifconfig_output).split('@')[0]
+    
+    os.system('docker exec -d ' + str(container_id_list[node_id - 1]) +
+              ' ip link set dev ' + target_interface + ' down')
+    os.system('docker exec -d ' + str(container_id_list[node_id - 1]) +
+              ' ip link set dev ' + target_interface + ' name ' + interface_name)
+    os.system('docker exec -d ' + str(container_id_list[sat_id - 1]) +
+              ' ip link set dev ' + interface_name + ' up')
+    os.system('docker exec -d ' + str(container_id_list[sat_id - 1]) +
+              ' tc qdisc add dev ' + interface_name +
+              ' root net delay ' + str(delay) + 'ms' + ' loss ' + str(loss) + '%'
+              ' rate ' + str(bw) + 'Gbps')
+
+def sn_handover_del_GSL_link(container_id_list, cell_id, sat_id):
+    GSL_name = 'GSL' + str(sat_id) + '-' + str(cell_id)
+    os.system('docker exec -d ' + str(container_id_list[cell_id - 1]) +
+              ' ip link set dev B' + str(cell_id) + '-eth' + str(sat_id) + ' down')
+    os.system('docker exec -d ' + str(container_id_list[sat_id - 1]) + 
+              ' ip link set dev B' + str(sat_id) + '-eth' + str(cell_id) + ' down')
+    
+    os.system('docker network disconnect ' + GSL_name + ' ' + 
+              str(container_id_list[sat_id - 1]))
+    os.system('docker network disconnect ' + GSL_name + ' ' +
+              str(container_id_list[cell_id - 1]))
+    os.system('docker network rm ' + GSL_name)
+
+def sn_handover_establish_GSL_link(container_id_list, constellation_size, delay, 
+                          cell_id, sat_id, bw, loss=0):
+    address_16_23 = (cell_id - constellation_size) & 0xff
+    address_8_15 = sat_id & 0xff
+    
+    GSL_name = 'GSL' + str(sat_id) + '-' + str(cell_id)
+    
+    # create docker network for GSL link
+    command = 'docker network create ' + GSL_name + ' --subnet 9.' + \
+              str(address_16_23) + '.' + str(address_8_15) + '.0/24'
+    os.system(command)
+    print ('[Handover create GSL:]' + command)
+    
+    # add sat to GSL link
+    connect_node_to_GSL_link(container_id_list, GSL_name, 'sat', sat_id, cell_id,
+                             address_16_23, address_8_15, delay, bw, loss)
+    
+    print ('[Handover added satellite:]' + 'docker network connect ' + GSL_name + ' ' +
+           str(container_id_list[sat_id - 1]) + ' --ip 9.' + str(address_16_23) + '.' +
+           '.' + str(address_8_15) + '.50')
+    
+    # add cell to GSL link
+    os.system('docker exec -d ' + str(container_id_list[cell_id - 1]) +
+              ' ip route del 9.' + str(address_16_23) + '.' + str(address_8_15) + '.0/24')
+    
+    connect_node_to_GSL_link(container_id_list, GSL_name, 'cell', sat_id, cell_id,
+                             address_16_23, address_8_15, delay, bw, loss)
+    
+    print ('[Handover added cell:]' + 'docker network connect ' + GSL_name + ' ' +
+           str(container_id_list[cell_id - 1]) + ' --ip 9.' + str(address_16_23) + '.' +
+           '.' + str(address_8_15) + '.60')
+
+def sn_handover(cell_id, target_sat_id, gw, current_time, handover_type, 
+                constellation_size, container_id_list, file_dir, bw, loss):
+    # load delay matrix
+    current_topo_path = file_dir + '/delay/' + str(current_time) + '.txt'
+    matrix = sn_get_param(current_topo_path)
+    
+    with os.popen('docker exec -i ' + str(container_id_list[cell_id - 1]) + 
+                  ' ip route | grep 9.{}.{}'.format(gw, gw) + 
+                  " | grep -o 'eth[0-9]*' | sed 's/eth//g'") as f:
+        current_sat_id = int(f.readline())
+    
+    # get message delay
+    curr_backhaul_delay = matrix[current_sat_id - 1][gw - 1]
+    target_backhaul_delay = matrix[target_sat_id - 1][gw - 1]
+    curr_comm_delay = matrix[current_sat_id - 1][cell_id - 1]
+    target_comm_delay = matrix[target_sat_id - 1][cell_id - 1]
+    
+    if target_comm_delay == 0:
+        print ("[Handover] Target unreachable.")
+        return
+    
+    handover_delay = calculate_handover_delay(curr_backhaul_delay, 
+                                              target_backhaul_delay,
+                                              curr_comm_delay,
+                                              target_comm_delay,
+                                              handover_type)
+    
+    # handover
+    # start_time = time.time()
+    sn_handover_del_GSL_link(container_id_list, cell_id, current_sat_id)
+    # end_time = time.time()
+    
+    # if handover_delay > end_time - start_time:
+    #     sleep(handover_delay - (end_time - start_time))
+    sleep(handover_delay)
+    
+    sn_handover_establish_GSL_link(container_id_list, constellation_size, target_comm_delay,
+                                   cell_id, target_sat_id, bw)
     
 def sn_perf(src, des, time_index, target_throughput, gw_list, constellation_size, container_id_list,
             file_path, configuration_file_path, remote_ssh):
@@ -963,15 +1213,17 @@ def sn_establish_new_GSL(container_id_list, matrix, constellation_size, bw,
           str(container_id_list[i - 1]) + " --ip 9." + str(address_16_23) +
           "." + str(address_8_15) + ".50")
     
-    # Fix bug: workaround to delete the unwanted route added by BIRD
-    sn_remote_cmd(
-        remote_ssh, "docker exec -d " + str(container_id_list[j - 1]) +
-        " ip route del 9." + str(address_16_23) + "." + str(address_8_15) + ".0/24")
+    # FIXME: workaround to delete the unwanted route added by BIRD
+    command_conn = ['docker', 'network', 'connect', GSL_name, container_id_list[j - 1],
+                    '--ip', '9.{}.{}.60'.format(address_16_23, address_8_15)]
+    result = subprocess.run(command_conn, capture_output=True, text=True)
+    while (result.returncode != 0):
+        print (result.stderr)
+        command_del = ['docker', 'exec', '-d', container_id_list[j - 1], 'ip', 
+                       'route', 'del', '9.{}.{}.0/24'.format(address_16_23, address_8_15)]
+        subprocess.run(command_del, capture_output=False, text=True)
+        result = subprocess.run(command_conn, capture_output=True, text=True)
     
-    sn_remote_cmd(
-        remote_ssh, "docker network connect " + GSL_name + " " +
-        str(container_id_list[j - 1]) + " --ip 9." + str(address_16_23) + "." +
-        str(address_8_15) + ".60")
     ifconfig_output = sn_remote_cmd(
         remote_ssh, "docker exec -it " + str(container_id_list[j - 1]) +
         " ip addr | grep -B 2 9." + str(address_16_23) + "." +

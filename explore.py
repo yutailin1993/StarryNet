@@ -19,6 +19,8 @@ if __name__ == '__main__':
     gw_indices = [x for x in range(satellites_num + 1, satellites_num + 5)]
     cell_indices = [x for x in range(satellites_num + 5, satellites_num + 37)]
     
+    handover_type = 'CU'
+    
     with open ('sim_configs/GW_location.txt', 'r') as gw_file:
         GW_lat_long = [list(map(float, line.strip().replace('[', '').replace(']', '').split(','))) for line in gw_file.readlines()]
     with open ('sim_configs/UE_location.txt', 'r') as ue_file:
@@ -28,7 +30,7 @@ if __name__ == '__main__':
     
     GW_conf_file_path = './gs_config.json'
     
-    hello_interval = 1
+    hello_interval = 3
     
     # assignments configuration
     assignments_df = np.genfromtxt('./sim_configs/assignment.csv', delimiter=',', skip_header=1)
@@ -43,7 +45,8 @@ if __name__ == '__main__':
     assert np.all(assignments_time == demands_time)
     
     print('Start StarryNet.')
-    sn = StarryNet(GW_conf_file_path, all_lat_long, hello_interval, AS, gw_indices, cell_indices)
+    sn = StarryNet(GW_conf_file_path, all_lat_long, handover_type, assignments[0], demands[0], 
+                   hello_interval, AS, gw_indices, cell_indices)
     sn.create_nodes()
     sn.create_links()
     sn.run_routing_deamon()
