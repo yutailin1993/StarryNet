@@ -19,7 +19,7 @@ if __name__ == '__main__':
     gw_indices = [x for x in range(satellites_num + 1, satellites_num + 5)]
     cell_indices = [x for x in range(satellites_num + 5, satellites_num + 37)]
     
-    handover_type = 'CU'
+    handover_type = 'CU-1'
     
     with open ('sim_configs/GW_location.txt', 'r') as gw_file:
         GW_lat_long = [list(map(float, line.strip().replace('[', '').replace(']', '').split(','))) for line in gw_file.readlines()]
@@ -30,7 +30,7 @@ if __name__ == '__main__':
     
     GW_conf_file_path = './gs_config.json'
     
-    hello_interval = 3
+    hello_interval = 1
     
     # assignments configuration
     assignments_df = np.genfromtxt('./sim_configs/assignment.csv', delimiter=',', skip_header=1)
@@ -40,7 +40,7 @@ if __name__ == '__main__':
     # user demands
     demands_df = np.genfromtxt('./sim_configs/user_demand.csv', delimiter=',', skip_header=1)
     demands_time = demands_df[:, 0]
-    demands = demands_df[:, 1:]
+    demands = demands_df[:, 1:]*10
     
     assert np.all(assignments_time == demands_time)
     

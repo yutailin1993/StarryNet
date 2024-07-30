@@ -62,3 +62,5 @@ starlink*
 /logs/
 /results/
 /.vscode/
+dry_run.ipynb
+test.sh

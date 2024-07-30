@@ -324,8 +324,8 @@ class StarryNet():
         sn_thread.start()
         sn_thread.join()
         
-        sn_thread.stop_network_traffic()
-        sn_thread.collect_results()
+        # sn_thread.stop_network_traffic()
+        # sn_thread.collect_results()
 
     def stop_emulation(self):
         # Stop emulation in a new thread.

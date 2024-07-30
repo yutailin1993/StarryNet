@@ -411,26 +411,47 @@ class sn_Emulation_Start_Thread(threading.Thread):
         self.utility_checking_time = utility_checking_time
         if self.container_id_list == []:
             self.container_id_list = sn_get_container_info(self.remote_ssh)
+        
+        self.perf_start_time_list = []
+        self.perf_end_time_list = []
 
-    def _establish_perf(self, src, dst, demand):
+    def _establish_perf_server(self, src, dst):
+        assert dst in self.gw_list
+        gw_container = self.container_id_list[dst - 1]
+        command = ['docker', 'exec', '-d', gw_container, 'bash', '-c',
+                   'iperf3 -s -p 5{} >> /tmp/iperf_{}_{}_result.txt 2>&1'.format(
+                    src, src, dst)]
+        subprocess.run(command, capture_output=False, text=True)
+
+    def _establish_perf_client(self, src, dst, demand):
         assert dst in self.gw_list
         src_container = self.container_id_list[src - 1]
-        gw_container = self.container_id_list[dst - 1]
         dst_addr = '9.{}.{}.10'.format(dst, dst)
         
-        command = ['docker', 'exec', '-d', gw_container, 'bash', '-c',
-                   'iperf3 -s -p 5{}'.format(src)]
-        subprocess.run(command, capture_output=False, text=True)
+        print ("start iperf client on cell " + str(src) + " to gateway " + str(dst))
         
         command = ['docker', 'exec', '-d', src_container, 'bash', '-c',
-                   'iperf3 -c {} -p 5{} -i {} -b {}M -t 0 > /tmp/iperf_{}_{}_result.txt'.format(
-                   dst_addr, src, 1.0, demand, src, dst)]
+                   'iperf3 -c {} -p 5{} -i {} -b {}M -t 0'.format(
+                   dst_addr, src, 1.0, demand)]
         
         result = subprocess.run(command, capture_output=True, text=True)
         
         return result
     
-    def _stop_perf(self, src):
+    def _stop_perf_server(self, dst):
+        gw_container = self.container_id_list[dst - 1]
+        
+        command = ['docker', 'exec', '-i', gw_container, 'bash', '-c',
+                   'ps aux | grep \'iperf3 -s\' | awk \'{print $2}\'']
+        proc_result = subprocess.run(command, capture_output=True, text=True)
+        proc_list = proc_result.stdout.split('\n')[:-1]
+        
+        for proc in proc_list:
+            command = ['docker', 'exec', '-i', gw_container, 'bash', '-c',
+                       'kill {}'.format(proc)]
+            subprocess.run(command, capture_output=False, text=True)
+    
+    def _stop_perf_client(self, src):
         src_container = self.container_id_list[src - 1]
         command = ['docker', 'exec', '-i', src_container, 'bash', '-c', 
                    'ps aux | grep \'iperf3 -c\' | awk \'{print $2}\'']
@@ -440,6 +461,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
         if len(proc_list) < 2:
             print ("No iperf process found on container " + src_container)
             return
+        print ("Stop iperf client on cell " + str(src))
         
         command = ['docker', 'exec', '-i', src_container, 'bash', '-c',
                    'kill {}'.format(proc_list[1])]
@@ -453,7 +475,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
         dst_addr = '9.{}.{}.10'.format(dst, dst)
         
         command = ['docker', 'exec', '-d', src_container, 'bash', '-c',
-                   'ping {} > /tmp/ping_{}_{}_result.txt'.format(
+                   'ping {} >> /tmp/ping_{}_{}_result.txt 2>&1'.format(
                     dst_addr, src, dst)]
         
         result = subprocess.run(command, capture_output=True, text=True)
@@ -478,8 +500,15 @@ class sn_Emulation_Start_Thread(threading.Thread):
         
     def stop_network_traffic(self):
         for cell in self.cell_list:
-            _, _ = self._stop_perf(cell)
-            _, _ = self._stop_ping(cell)
+            _, _ = self._stop_perf_client(cell)
+            self.perf_end_time_list.append(time.time())
+            
+        for gw in self.gw_list:
+            self._stop_perf_server(gw)
+            
+        for idx, cell in enumerate(self.cell_list):
+            gw = self.gw_list[int(self.assigned_gw[idx])]
+            _, _ = self._stop_ping(cell, gw)
     
     def collect_results(self):
         print ("Collecting results...")
@@ -487,13 +516,22 @@ class sn_Emulation_Start_Thread(threading.Thread):
             src = cell
             dst = self.gw_list[int(self.assigned_gw[idx])]
             src_container = self.container_id_list[src - 1]
+            gw_container = self.container_id_list[dst - 1]
             perf_file = 'iperf_{}_{}_result.txt'.format(src, dst)
             ping_file = 'ping_{}_{}_result.txt'.format(src, dst)
-            os.system('docker cp ' + src_container + ':/tmp/' + perf_file + ' ' +
+            os.system('docker cp ' + gw_container + ':/tmp/' + perf_file + ' ' +
                       './results/iperf/' + perf_file)
             os.system('docker cp ' + src_container + ':/tmp/' + ping_file + ' ' +
                       './results/ping/' + ping_file)
             
+        with open('./results/iperf/iperf_start_time_list.txt', 'w') as f:
+            for time in self.perf_start_time_list:
+                f.write(str(time) + ', ')
+        
+        with open('./results/iperf/iperf_end_time_list.txt', 'w') as f:
+            for time in self.perf_end_time_list:
+                f.write(str(time) + ', ')
+
     def GSL_link_occupied(self, gs_id):
         container = self.container_id_list[gs_id - 1]
         pattern = r'B{}-eth\d+@'.format(gs_id)
@@ -527,16 +565,18 @@ class sn_Emulation_Start_Thread(threading.Thread):
         # print ("Wait 30 seconds for iperf server to start...")
         # sleep(10)
             
-        for idx, cell in enumerate(self.cell_list):
-            print("Setting up iperf client on cell " + str(cell) + "...")
-            target_gw = self.gw_list[int(self.assigned_gw[idx])]
-            demand = self.demands[idx]
-            self._establish_perf(cell, target_gw, demand)
-            
-        for idx, cell in enumerate(self.cell_list):
-            print("Setting up ping on cell " + str(cell) + "...")
-            target_gw = self.gw_list[int(self.assigned_gw[idx])]
-            self._establish_ping(cell, target_gw)
+        # for idx, cell in enumerate(self.cell_list):
+        #     print("Setting up iperf client on cell " + str(cell) + "...")
+        #     target_gw = self.gw_list[int(self.assigned_gw[idx])]
+        #     demand = self.demands[idx]
+        #     self._establish_perf_server(cell, target_gw)
+        #     self.perf_start_time_list.append(time.time())
+        #     self._establish_perf_client(cell, target_gw, demand)
+        #     
+        # for idx, cell in enumerate(self.cell_list):
+        #     print("Setting up ping on cell " + str(cell) + "...")
+        #     target_gw = self.gw_list[int(self.assigned_gw[idx])]
+        #     self._establish_ping(cell, target_gw)
        
         topo_change_file_path = self.configuration_file_path + "/" + self.file_path + '/Topo_leo_change.txt'
         fi = open(topo_change_file_path, 'r')
@@ -548,9 +588,20 @@ class sn_Emulation_Start_Thread(threading.Thread):
                 # the time when the new change occurrs
                 current_time = str(int(words[1][:-1]))
                 # Wait for user input to stop the script
-                # print ("[EXP STOP] Current time: " + str(timeptr))
-                # sys.stdin.readline()
+                print ("[EXP STOP] Current time: " + str(timeptr) + \
+                       ", will update at time: " + str(current_time) + \
+                       ", sim_time: " + str(int(current_time) - timeptr + 1))
                 
+                with open('./star_info.txt', 'w') as f:
+                    f.write(str(timeptr) + \
+                            "," + str(int(current_time) - timeptr + 1) + \
+                            "," + str(current_time) + "\n")
+                print ("[EXP STOP] waiting for exp_ops...")
+                while not os.path.isfile('./exp_done.txt'):
+                    sleep(3)
+                print ("[EXP STOP] resume starrynet")
+                os.remove('./exp_done.txt')
+ 
                 while int(current_time) > timeptr:
                     start_time = time.time()
                     if timeptr in self.utility_checking_time:
@@ -597,6 +648,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                             sn_handover(cell_id,
                                         target_sat_id,
                                         gw,
+                                        timeptr,
                                         self.handover_type,
                                         self.constellation_size,
                                         self.container_id_list,
@@ -696,7 +748,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                         s = f
                         f = tmp
                     print("add link", s, f)
-                    # workaround: avoid establishing excessive links
+                    # FIXME: avoid establishing excessive links
                     # if not self.GSL_link_occupied(f):
                     #     current_topo_path = self.configuration_file_path + "/" + self.file_path + '/delay/' + str(
                     #         current_time) + '.txt'
@@ -957,11 +1009,17 @@ def sn_ping(src, des, time_index, constellation_size, container_id_list,
     f.close()
 
 def calculate_handover_delay(curr_backhaul_delay, target_backhaul_delay, 
-                             curr_comm_delay, target_comm_delay, handover_type):
-    if handover_type == 'CU':
+                             curr_comm_delay, target_comm_delay, 
+                             handover_type, isl_delay=None):
+    if handover_type == 'CU-1':
         delay = 2*curr_comm_delay + 1*target_comm_delay + 6*curr_backhaul_delay + 8*target_backhaul_delay
-    elif handover_type == 'DU':
+    elif handover_type == 'CU-2':
+        assert isl_delay is not None
+        delay = 2*curr_comm_delay + 1*target_comm_delay + 6*isl_delay + 2*target_backhaul_delay
+    elif handover_type == 'DU-1':
         delay = 2*curr_comm_delay + 1*target_comm_delay + 5*curr_backhaul_delay + 3*target_backhaul_delay
+    elif handover_type == 'DU-2':
+        delay = 2*curr_comm_delay + 1*target_comm_delay
     else:
         raise ValueError("Invalid handover type.")
     
@@ -1067,12 +1125,20 @@ def sn_handover(cell_id, target_sat_id, gw, current_time, handover_type,
         print ("[Handover] Target unreachable.")
         return
     
+    if handover_type == 'CU-2':
+        if matrix[current_sat_id - 1][target_sat_id - 1] == 0:
+            isl_delay = curr_backhaul_delay + target_backhaul_delay
+        else:
+            isl_delay = matrix[current_sat_id - 1][target_sat_id - 1]
+    else:
+        isl_delay = None
+
     handover_delay = calculate_handover_delay(curr_backhaul_delay, 
                                               target_backhaul_delay,
                                               curr_comm_delay,
                                               target_comm_delay,
-                                              handover_type)
-    
+                                              handover_type,
+                                              isl_delay=isl_delay)
     # handover
     # start_time = time.time()
     sn_handover_del_GSL_link(container_id_list, cell_id, current_sat_id)
