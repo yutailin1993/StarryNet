@@ -4,6 +4,9 @@ import threading
 import sys
 from time import sleep
 import numpy
+import pandas as pd
+import numpy as np
+
 """
 Used in the remote machine for link updating, initializing links, damaging and recovering links and other functionalities。
 author: Yangtao Deng (dengyt21@mails.tsinghua.edu.cn) and Zeqi Lai (zeqilai@tsinghua.edu.cn) 
@@ -24,231 +27,262 @@ def sn_get_down_satellite(current_sat_id, current_orbit_id, sat_num):
         return [current_sat_id + 1, current_orbit_id]
 
 
-def sn_ISL_establish(current_sat_id, current_orbit_id, container_id_list,
+def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id, 
+                     current_orbit_id, next_orbit_id, container_id_list,
                      orbit_num, sat_num, constellation_size, matrix, bw, loss):
-    current_id = current_orbit_id * sat_num + current_sat_id
-    isl_idx = current_id * 2 + 1
+    isl_idx = current_sat * 2 + 1
     # Establish intra-orbit ISLs
-    # (Down):
-    [down_sat_id,
-     down_orbit_id] = sn_get_down_satellite(current_sat_id, current_orbit_id,
-                                            sat_num)
-    print("[" + str(isl_idx) + "/" + str(constellation_size * 2) +
-          "] Establish intra-orbit ISL from: (" + str(current_sat_id) + "," +
-          str(current_orbit_id) + ") to (" + str(down_sat_id) + "," +
-          str(down_orbit_id) + ")")
-    ISL_name = "Le_" + str(current_sat_id) + "-" + str(current_orbit_id) + \
-        "_" + str(down_sat_id) + "-" + str(down_orbit_id)
-    address_16_23 = isl_idx >> 8
-    address_8_15 = isl_idx & 0xff
-    # Create internal network in docker.
-    os.system('docker network create ' + ISL_name + " --subnet 10." +
-              str(address_16_23) + "." + str(address_8_15) + ".0/24")
-    print('[Create ISL:]' + 'docker network create ' + ISL_name +
-          " --subnet 10." + str(address_16_23) + "." + str(address_8_15) +
-          ".0/24")
-    os.system('docker network connect ' + ISL_name + " " +
-              str(container_id_list[current_orbit_id * sat_num +
-                                    current_sat_id]) + " --ip 10." +
-              str(address_16_23) + "." + str(address_8_15) + ".40")
-    delay = matrix[current_orbit_id * sat_num +
-                   current_sat_id][down_orbit_id * sat_num + down_sat_id]
-    with os.popen(
-            "docker exec -it " +
-            str(container_id_list[current_orbit_id * sat_num +
-                                  current_sat_id]) +
-            " ip addr | grep -B 2 10." + str(address_16_23) + "." +
-            str(address_8_15) +
-            ".40 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
-        ifconfig_output = f.readline()
-        target_interface = str(ifconfig_output).split("@")[0]
-        os.system("docker exec -d " +
-                  str(container_id_list[current_orbit_id * sat_num +
-                                        current_sat_id]) +
-                  " ip link set dev " + target_interface + " down")
-        os.system("docker exec -d " +
-                  str(container_id_list[current_orbit_id * sat_num +
-                                        current_sat_id]) +
-                  " ip link set dev " + target_interface + " name " + "B" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) +
-                  "-eth" + str(down_orbit_id * sat_num + down_sat_id + 1))
-        os.system("docker exec -d " +
-                  str(container_id_list[current_orbit_id * sat_num +
-                                        current_sat_id]) +
-                  " ip link set dev B" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) +
-                  "-eth" + str(down_orbit_id * sat_num + down_sat_id + 1) +
-                  " up")
-        os.system("docker exec -d " +
-                  str(container_id_list[current_orbit_id * sat_num +
-                                        current_sat_id]) +
-                  " tc qdisc add dev B" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) +
-                  "-eth" + str(down_orbit_id * sat_num + down_sat_id + 1) +
-                  " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
-    print('[Add current node:]' + 'docker network connect ' + ISL_name + " " +
-          str(container_id_list[current_orbit_id * sat_num + current_sat_id]) +
-          " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".40")
-    os.system('docker network connect ' + ISL_name + " " +
-              str(container_id_list[down_orbit_id * sat_num + down_sat_id]) +
-              " --ip 10." + str(address_16_23) + "." + str(address_8_15) +
-              ".10")
-    with os.popen(
-            "docker exec -it " +
-            str(container_id_list[down_orbit_id * sat_num + down_sat_id]) +
-            " ip addr | grep -B 2 10." + str(address_16_23) + "." +
-            str(address_8_15) +
-            ".10 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
-        ifconfig_output = f.readline()
-        target_interface = str(ifconfig_output).split("@")[0]
-        os.system("docker exec -d " +
-                  str(container_id_list[down_orbit_id * sat_num +
-                                        down_sat_id]) + " ip link set dev " +
-                  target_interface + " down")
-        os.system("docker exec -d " +
-                  str(container_id_list[down_orbit_id * sat_num +
-                                        down_sat_id]) + " ip link set dev " +
-                  target_interface + " name " + "B" +
-                  str(down_orbit_id * sat_num + down_sat_id + 1) + "-eth" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1))
-        os.system("docker exec -d " +
-                  str(container_id_list[down_orbit_id * sat_num +
-                                        down_sat_id]) + " ip link set dev B" +
-                  str(down_orbit_id * sat_num + down_sat_id + 1) + "-eth" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) + " up")
-        os.system("docker exec -d " +
-                  str(container_id_list[down_orbit_id * sat_num +
-                                        down_sat_id]) + " tc qdisc add dev B" +
-                  str(down_orbit_id * sat_num + down_sat_id + 1) + "-eth" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) +
-                  " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
-    print('[Add down node:]' + 'docker network connect ' + ISL_name + " " +
-          str(container_id_list[down_orbit_id * sat_num + down_sat_id]) +
-          " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".10")
+    if current_sat != next_sat_in_orbit:
+        print("[" + str(isl_idx) + "/" + str(constellation_size * 2) +
+              "] Establish intra-orbit ISL from: plane " + str(plane_id) + " - (" + 
+              str(current_sat) + "," + str(current_orbit_id) + ") to (" + 
+              str(next_sat_in_orbit) + "," + str(current_orbit_id) + ")")
+        ISL_name = "Le_" + str(current_sat) + "-" + str(current_orbit_id) + \
+            "_" + str(next_sat_in_orbit) + "-" + str(current_orbit_id)
+        address_16_23 = isl_idx >> 8
+        address_8_15 = isl_idx & 0xff
+        # Create internal network in docker.
+        os.system('docker network create ' + ISL_name + " --subnet 10." +
+                  str(address_16_23) + "." + str(address_8_15) + ".0/24")
+        print('[Create ISL:]' + 'docker network create ' + ISL_name +
+              " --subnet 10." + str(address_16_23) + "." + str(address_8_15) +
+              ".0/24")
+        os.system('docker network connect ' + ISL_name + " " +
+                  str(container_id_list[current_sat]) + " --ip 10." +
+                  str(address_16_23) + "." + str(address_8_15) + ".40")
+        delay = matrix[current_sat][next_sat_in_orbit]
+        with os.popen(
+                "docker exec -it " +
+                str(container_id_list[current_sat]) +
+                " ip addr | grep -B 2 10." + str(address_16_23) + "." +
+                str(address_8_15) +
+                ".40 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
+            ifconfig_output = f.readline()
+            target_interface = str(ifconfig_output).split("@")[0]
+            os.system("docker exec -d " +
+                      str(container_id_list[current_sat]) +
+                      " ip link set dev " + target_interface + " down")
+            os.system("docker exec -d " +
+                      str(container_id_list[current_sat]) +
+                      " ip link set dev " + target_interface + " name " + "B" +
+                      str(current_sat + 1) +
+                      "-eth" + str(next_sat_in_orbit + 1))
+            os.system("docker exec -d " +
+                      str(container_id_list[current_sat]) +
+                      " ip link set dev B" +
+                      str(current_sat + 1) +
+                      "-eth" + str(next_sat_in_orbit + 1) +
+                      " up")
+            os.system("docker exec -d " +
+                      str(container_id_list[current_sat]) +
+                      " tc qdisc add dev B" +
+                      str(current_sat + 1) +
+                      "-eth" + str(next_sat_in_orbit + 1) +
+                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
+        print('[Add current node:]' + 'docker network connect ' + ISL_name + " " +
+              str(container_id_list[current_sat]) +
+              " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".40")
+        os.system('docker network connect ' + ISL_name + " " +
+                  str(container_id_list[next_sat_in_orbit]) +
+                  " --ip 10." + str(address_16_23) + "." + str(address_8_15) +
+                  ".10")
+        with os.popen(
+                "docker exec -it " +
+                str(container_id_list[next_sat_in_orbit]) +
+                " ip addr | grep -B 2 10." + str(address_16_23) + "." +
+                str(address_8_15) +
+                ".10 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
+            ifconfig_output = f.readline()
+            target_interface = str(ifconfig_output).split("@")[0]
+            os.system("docker exec -d " +
+                      str(container_id_list[next_sat_in_orbit]) + " ip link set dev " +
+                      target_interface + " down")
+            os.system("docker exec -d " +
+                      str(container_id_list[next_sat_in_orbit]) + " ip link set dev " +
+                      target_interface + " name " + "B" +
+                      str(next_sat_in_orbit + 1) + "-eth" +
+                      str(current_sat + 1))
+            os.system("docker exec -d " +
+                      str(container_id_list[next_sat_in_orbit]) + " ip link set dev B" +
+                      str(next_sat_in_orbit + 1) + "-eth" +
+                      str(current_sat + 1) + " up")
+            os.system("docker exec -d " +
+                      str(container_id_list[next_sat_in_orbit]) + " tc qdisc add dev B" +
+                      str(next_sat_in_orbit + 1) + "-eth" +
+                      str(current_sat + 1) +
+                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
+        print('[Add down node:]' + 'docker network connect ' + ISL_name + " " +
+              str(container_id_list[next_sat_in_orbit]) +
+              " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".10")
 
-    print("Add 10." + str(address_16_23) + "." + str(address_8_15) +
-          ".40/24 and 10." + str(address_16_23) + "." + str(address_8_15) +
-          ".10/24 to (" + str(current_sat_id) + "," + str(current_orbit_id) +
-          ") to (" + str(down_sat_id) + "," + str(down_orbit_id) + ")")
-    isl_idx = isl_idx + 1
+        print("Add 10." + str(address_16_23) + "." + str(address_8_15) +
+              ".40/24 and 10." + str(address_16_23) + "." + str(address_8_15) +
+              ".10/24 to (" + str(current_sat) + "," + str(current_orbit_id) +
+              ") to (" + str(next_sat_in_orbit) + "," + str(current_orbit_id) + ")")
+        isl_idx = isl_idx + 1
 
-    # Establish inter-orbit ISLs
-    # (Right):
-    [right_sat_id,
-     right_orbit_id] = sn_get_right_satellite(current_sat_id, current_orbit_id,
-                                              orbit_num)
-    print("[" + str(isl_idx) + "/" + str(constellation_size * 2) +
-          "] Establish inter-orbit ISL from: (" + str(current_sat_id) + "," +
-          str(current_orbit_id) + ") to (" + str(right_sat_id) + "," +
-          str(right_orbit_id) + ")")
-    ISL_name = "La_" + str(current_sat_id) + "-" + str(current_orbit_id) + \
-        "_" + str(right_sat_id) + "-" + str(right_orbit_id)
-    address_16_23 = isl_idx >> 8
-    address_8_15 = isl_idx & 0xff
-    # Create internal network in docker.
-    os.system('docker network create ' + ISL_name + " --subnet 10." +
-              str(address_16_23) + "." + str(address_8_15) + ".0/24")
-    print('[Create ISL:]' + 'docker network create ' + ISL_name +
-          " --subnet 10." + str(address_16_23) + "." + str(address_8_15) +
-          ".0/24")
-    os.system('docker network connect ' + ISL_name + " " +
-              str(container_id_list[current_orbit_id * sat_num +
-                                    current_sat_id]) + " --ip 10." +
-              str(address_16_23) + "." + str(address_8_15) + ".30")
-    delay = matrix[current_orbit_id * sat_num +
-                   current_sat_id][right_orbit_id * sat_num + right_sat_id]
-    with os.popen(
-            "docker exec -it " +
-            str(container_id_list[current_orbit_id * sat_num +
-                                  current_sat_id]) +
-            " ip addr | grep -B 2 10." + str(address_16_23) + "." +
-            str(address_8_15) +
-            ".30 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
-        ifconfig_output = f.readline()
-        target_interface = str(ifconfig_output).split("@")[0]
-        os.system("docker exec -d " +
-                  str(container_id_list[current_orbit_id * sat_num +
-                                        current_sat_id]) +
-                  " ip link set dev " + target_interface + " down")
-        os.system("docker exec -d " +
-                  str(container_id_list[current_orbit_id * sat_num +
-                                        current_sat_id]) +
-                  " ip link set dev " + target_interface + " name " + "B" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) +
-                  "-eth" + str(right_orbit_id * sat_num + right_sat_id + 1))
-        os.system("docker exec -d " +
-                  str(container_id_list[current_orbit_id * sat_num +
-                                        current_sat_id]) +
-                  " ip link set dev B" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) +
-                  "-eth" + str(right_orbit_id * sat_num + right_sat_id + 1) +
-                  " up")
-        os.system("docker exec -d " +
-                  str(container_id_list[current_orbit_id * sat_num +
-                                        current_sat_id]) +
-                  " tc qdisc add dev B" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) +
-                  "-eth" + str(right_orbit_id * sat_num + right_sat_id + 1) +
-                  " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
-    print('[Add current node:]' + 'docker network connect ' + ISL_name + " " +
-          str(container_id_list[current_orbit_id * sat_num + current_sat_id]) +
-          " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".30")
-    os.system('docker network connect ' + ISL_name + " " +
-              str(container_id_list[right_orbit_id * sat_num + right_sat_id]) +
-              " --ip 10." + str(address_16_23) + "." + str(address_8_15) +
-              ".20")
+    if current_sat != sat_in_next_orbit:
+        # Establish inter-orbit ISLs
+        print("[" + str(isl_idx) + "/" + str(constellation_size * 2) +
+              "] Establish inttra-orbit ISL from: plane " + str(plane_id) + " (" 
+              + str(current_sat) + "," +
+              str(current_orbit_id) + ") to (" + str(sat_in_next_orbit) + "," +
+              str(next_orbit_id) + ")")
+        ISL_name = "La_" + str(current_sat) + "-" + str(current_orbit_id) + \
+            "_" + str(sat_in_next_orbit) + "-" + str(next_orbit_id)
+        address_16_23 = isl_idx >> 8
+        address_8_15 = isl_idx & 0xff
+        # Create internal network in docker.
+        os.system('docker network create ' + ISL_name + " --subnet 10." +
+                  str(address_16_23) + "." + str(address_8_15) + ".0/24")
+        print('[Create ISL:]' + 'docker network create ' + ISL_name +
+              " --subnet 10." + str(address_16_23) + "." + str(address_8_15) +
+              ".0/24")
+        os.system('docker network connect ' + ISL_name + " " +
+                  str(container_id_list[current_sat]) + " --ip 10." +
+                  str(address_16_23) + "." + str(address_8_15) + ".30")
+        delay = matrix[current_sat][sat_in_next_orbit]
+        with os.popen(
+                "docker exec -it " +
+                str(container_id_list[current_sat]) +
+                " ip addr | grep -B 2 10." + str(address_16_23) + "." +
+                str(address_8_15) +
+                ".30 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
+            ifconfig_output = f.readline()
+            target_interface = str(ifconfig_output).split("@")[0]
+            os.system("docker exec -d " +
+                      str(container_id_list[current_sat]) +
+                      " ip link set dev " + target_interface + " down")
+            os.system("docker exec -d " +
+                      str(container_id_list[current_sat]) +
+                      " ip link set dev " + target_interface + " name " + "B" +
+                      str(current_sat + 1) +
+                      "-eth" + str(sat_in_next_orbit + 1))
+            os.system("docker exec -d " +
+                      str(container_id_list[current_sat]) +
+                      " ip link set dev B" +
+                      str(current_sat + 1) +
+                      "-eth" + str(sat_in_next_orbit + 1) +
+                      " up")
+            os.system("docker exec -d " +
+                      str(container_id_list[current_sat]) +
+                      " tc qdisc add dev B" +
+                      str(current_sat + 1) +
+                      "-eth" + str(sat_in_next_orbit + 1) +
+                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
+        print('[Add current node:]' + 'docker network connect ' + ISL_name + " " +
+              str(container_id_list[current_sat]) +
+              " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".30")
+        os.system('docker network connect ' + ISL_name + " " +
+                  str(container_id_list[sat_in_next_orbit]) +
+                  " --ip 10." + str(address_16_23) + "." + str(address_8_15) +
+                  ".20")
 
-    with os.popen(
-            "docker exec -it " +
-            str(container_id_list[right_orbit_id * sat_num + right_sat_id]) +
-            " ip addr | grep -B 2 10." + str(address_16_23) + "." +
-            str(address_8_15) +
-            ".20 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
-        ifconfig_output = f.readline()
-        target_interface = str(ifconfig_output).split("@")[0]
-        os.system("docker exec -d " +
-                  str(container_id_list[right_orbit_id * sat_num +
-                                        right_sat_id]) + " ip link set dev " +
-                  target_interface + " down")
-        os.system("docker exec -d " +
-                  str(container_id_list[right_orbit_id * sat_num +
-                                        right_sat_id]) + " ip link set dev " +
-                  target_interface + " name " + "B" +
-                  str(right_orbit_id * sat_num + right_sat_id + 1) + "-eth" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1))
-        os.system("docker exec -d " +
-                  str(container_id_list[right_orbit_id * sat_num +
-                                        right_sat_id]) + " ip link set dev B" +
-                  str(right_orbit_id * sat_num + right_sat_id + 1) + "-eth" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) + " up")
-        os.system("docker exec -d " +
-                  str(container_id_list[right_orbit_id * sat_num +
-                                        right_sat_id]) +
-                  " tc qdisc add dev B" +
-                  str(right_orbit_id * sat_num + right_sat_id + 1) + "-eth" +
-                  str(current_orbit_id * sat_num + current_sat_id + 1) +
-                  " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
-    print('[Add right node:]' + 'docker network connect ' + ISL_name + " " +
-          str(container_id_list[right_orbit_id * sat_num + right_sat_id]) +
-          " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".20")
+        with os.popen(
+                "docker exec -it " +
+                str(container_id_list[sat_in_next_orbit]) +
+                " ip addr | grep -B 2 10." + str(address_16_23) + "." +
+                str(address_8_15) +
+                ".20 | head -n 1 | awk -F: '{ print $2 }' | tr -d '[:blank:]'") as f:
+            ifconfig_output = f.readline()
+            target_interface = str(ifconfig_output).split("@")[0]
+            os.system("docker exec -d " +
+                      str(container_id_list[sat_in_next_orbit]) + " ip link set dev " +
+                      target_interface + " down")
+            os.system("docker exec -d " +
+                      str(container_id_list[sat_in_next_orbit]) + " ip link set dev " +
+                      target_interface + " name " + "B" +
+                      str(sat_in_next_orbit + 1) + "-eth" +
+                      str(current_sat + 1))
+            os.system("docker exec -d " +
+                      str(container_id_list[sat_in_next_orbit]) + " ip link set dev B" +
+                      str(sat_in_next_orbit + 1) + "-eth" +
+                      str(current_sat + 1) + " up")
+            os.system("docker exec -d " +
+                      str(container_id_list[sat_in_next_orbit]) +
+                      " tc qdisc add dev B" +
+                      str(sat_in_next_orbit + 1) + "-eth" +
+                      str(current_sat + 1) +
+                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
+        print('[Add right node:]' + 'docker network connect ' + ISL_name + " " +
+              str(container_id_list[sat_in_next_orbit]) +
+              " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".20")
 
-    print("Add 10." + str(address_16_23) + "." + str(address_8_15) +
-          ".30/24 and 10." + str(address_16_23) + "." + str(address_8_15) +
-          ".20/24 to (" + str(current_sat_id) + "," + str(current_orbit_id) +
-          ") to (" + str(right_sat_id) + "," + str(right_orbit_id) + ")")
+        print("Add 10." + str(address_16_23) + "." + str(address_8_15) +
+              ".30/24 and 10." + str(address_16_23) + "." + str(address_8_15) +
+              ".20/24 to (" + str(current_sat) + "," + str(current_orbit_id) +
+              ") to (" + str(sat_in_next_orbit) + "," + str(next_orbit_id) + ")")
 
 
 def sn_establish_ISLs(container_id_list, matrix, orbit_num, sat_num,
-                      constellation_size, bw, loss):
+                      constellation_size, bw, loss, plane_cnt, 
+                      constellation_conf_dir):
+
+    sat_map_df = pd.read_csv(constellation_conf_dir + '/pos/sat_map.csv')
+
+    plane_conf_dfs = [
+        pd.read_csv(constellation_conf_dir + '/pos/' + f'constellation_{i}.csv') \
+                for i in range(plane_cnt)]
+
+    plane_groups = []
+    for p_idx in range(plane_cnt):
+        for i in range(plane_conf_dfs[p_idx].shape[0]):
+            plane_conf_dfs[p_idx]['constellation'][i] = list(map(int, 
+                    plane_conf_dfs[p_idx]['constellation'][i].strip('][').split(',')))
+        
+        plane_groups.append(plane_conf_dfs[p_idx]['orbit_id'].tolist())
+
+    fast_assignments_df = pd.read_csv(constellation_conf_dir + '/fast_assignment.csv')
+    for i in range(fast_assignments_df.shape[0]):
+        fast_assignments_df['sat_list'][i] = list(map(int, 
+                        fast_assignments_df['sat_list'][i].strip('][').split()))
+
     ISL_threads = []
-    for current_orbit_id in range(0, orbit_num):
-        for current_sat_id in range(0, sat_num):
-            ISL_thread = threading.Thread(
-                target=sn_ISL_establish,
-                args=(current_sat_id, current_orbit_id, container_id_list,
-                      orbit_num, sat_num, constellation_size, matrix, bw,
-                      loss))
-            ISL_threads.append(ISL_thread)
+    # for current_orbit_id in range(0, orbit_num):
+    #     for current_sat_id in range(0, sat_num):
+    #         ISL_thread = threading.Thread(
+    #             target=sn_ISL_establish,
+    #             args=(current_sat_id, current_orbit_id, container_id_list,
+    #                   orbit_num, sat_num, constellation_size, matrix, bw,
+    #                   loss))
+    #         ISL_threads.append(ISL_thread)
+
+    # Hack to initialize ISLs links from given consetellation config
+    for p_idx in range(plane_cnt):
+        plane = plane_conf_dfs[p_idx]
+        for i in range(plane.shape[0]):
+            current_orbit = plane['constellation'][i]
+            num_sat_per_orbit = len(current_orbit)
+            for idx, j in enumerate(current_orbit):
+                current_sat = int(sat_map_df.loc[
+                        (sat_map_df['orbit_id'] == plane['orbit_id'][i]) &
+                        (sat_map_df['orbit_num'] == j)]['k'].values)
+                next_sat_in_orbit = int(sat_map_df.loc[
+                        (sat_map_df['orbit_id'] == plane['orbit_id'][i]) &
+                        (sat_map_df['orbit_num'] == current_orbit[(idx + 1) % num_sat_per_orbit])
+                ]['k'].values)
+               
+                if j in plane['constellation'][(i+1) % plane.shape[0]]:
+                    sat_in_next_orbit = int(sat_map_df.loc[
+                        (sat_map_df['orbit_id'] == plane['orbit_id'][(i + 1) % plane.shape[0]]) &
+                        (sat_map_df['orbit_num'] == j)
+                    ]['k'].values)
+                else:
+                    sat_in_next_orbit = current_sat
+
+                if current_sat == sat_in_next_orbit:
+                    next_orbit_id = plane['orbit_id'][i]
+                else:
+                    next_orbit_id = plane['orbit_id'][(i + 1) % plane.shape[0]]
+
+                ISL_thread = threading.Thread(
+                    target=sn_ISL_establish,
+                    args=(current_sat, next_sat_in_orbit, sat_in_next_orbit, 
+                          p_idx, plane['orbit_id'][i], next_orbit_id,
+                          container_id_list, orbit_num, 
+                          sat_num, constellation_size, matrix, bw, loss))
+                ISL_threads.append(ISL_thread)
+    
     for ISL_thread in ISL_threads:
         ISL_thread.start()
     for ISL_thread in ISL_threads:
@@ -549,20 +583,24 @@ def sn_delay_change(link_x, link_y, delay, container_id_list,
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 10:
-        orbit_num = int(sys.argv[1])
-        sat_num = int(sys.argv[2])
-        constellation_size = int(sys.argv[3])
-        fac_num = int(sys.argv[4])
-        sat_bandwidth = float(sys.argv[5])
-        sat_loss = float(sys.argv[6])
-        sat_ground_bandwidth = float(sys.argv[7])
-        sat_ground_loss = float(sys.argv[8])
-        current_topo_path = sys.argv[9]
+    if len(sys.argv) == 12:
+        plane_cnt = int(sys.argv[1])
+        constellation_conf_dir = sys.argv[2]
+        orbit_num = int(sys.argv[3])
+        sat_num = int(sys.argv[4])
+        constellation_size = int(sys.argv[5])
+        fac_num = int(sys.argv[6])
+        sat_bandwidth = float(sys.argv[7])
+        sat_loss = float(sys.argv[8])
+        sat_ground_bandwidth = float(sys.argv[9])
+        sat_ground_loss = float(sys.argv[10])
+        current_topo_path = sys.argv[11]
         matrix = sn_get_param(current_topo_path)
         container_id_list = sn_get_container_info()
+        
         sn_establish_ISLs(container_id_list, matrix, orbit_num, sat_num,
-                          constellation_size, sat_bandwidth, sat_loss)
+                          constellation_size, sat_bandwidth, sat_loss,
+                          plane_cnt, constellation_conf_dir)
         sn_establish_GSL(container_id_list, matrix, fac_num, constellation_size,
                          sat_ground_bandwidth, sat_ground_loss)
     elif len(sys.argv) == 4:

@@ -4,6 +4,7 @@ from sgp4.api import Satrec, WGS84
 from skyfield.api import load, wgs84, EarthSatellite
 from datetime import datetime
 import numpy as np
+import pandas as pd
 import os
 
 from starrynet.sn_utils import *
@@ -16,13 +17,15 @@ _ = inf = 999999  # inf
 
 class Observer():
 
-    def __init__(self, file_path, configuration_file_path, inclination,
+    def __init__(self, file_path, configuration_file_path, 
+                 constellation_conf_dir, inclination,
                  satellite_altitude, orbit_number, sat_number, duration,
                  gw_antenna_number, cell_antenna_number, gw_list, cell_list, 
                  GS_lat_long, antenna_inclination, 
-                 intra_routing, hello_interval, AS):
+                 intra_routing, hello_interval, constellation_size, AS):
         self.file_path = file_path
         self.configuration_file_path = configuration_file_path
+        self.constellation_conf_dir = constellation_conf_dir
         self.inclination = inclination
         self.satellite_altitude = satellite_altitude
         self.orbit_number = orbit_number
@@ -36,16 +39,41 @@ class Observer():
         self.antenna_inclination = antenna_inclination
         self.intra_routing = intra_routing
         self.hello_interval = hello_interval
+        self.constellation_size = constellation_size
         self.AS = AS
+        self.plane_cnt = 2
+
+        self.sat_map_df = pd.read_csv(self.constellation_conf_dir + '/pos/sat_map.csv')
 
     def access_P_L_shortest(self, sat_cbf, fac_cbf, fac_num, sat_num,
                             num_orbits, num_sats_per_orbit, duration, fac_ll,
                             sat_lla, bound_dis, alpha, gw_antenna_num,
                             cell_antenna_num, path):
+        plane_conf_dfs = [
+            pd.read_csv(self.constellation_conf_dir + '/pos/' + f'constellation_{i}.csv') \
+                for i in range(self.plane_cnt)]
+
+        plane_groups = []
+        for p_idx in range(self.plane_cnt):
+            for i in range(plane_conf_dfs[p_idx].shape[0]):
+                plane_conf_dfs[p_idx]['constellation'][i] = list(map(int, 
+                        plane_conf_dfs[p_idx]['constellation'][i].strip('][').split(',')))
+            
+            plane_groups.append(plane_conf_dfs[p_idx]['orbit_id'].tolist())
+
+        fast_assignments_df = pd.read_csv(self.constellation_conf_dir + '/' + 'fast_assignment.csv')
+        for i in range(fast_assignments_df.shape[0]):
+            fast_assignments_df['sat_list'][i] = list(map(int, 
+                            fast_assignments_df['sat_list'][i].strip('][').split()))
+
+        cell_asignments = np.genfromtxt(self.constellation_conf_dir + '/cell_assignment.csv', 
+                                           delimiter=',').tolist()
+        
         delay_matrix = np.zeros((fac_num + sat_num, fac_num + sat_num))
         for cur_time in range(duration):
             for i in range(0, fac_num):
-                if i + sat_num in self.gw_list:
+                fac_id = i + sat_num + 1
+                if fac_id in self.gw_list:
                     antenna_num = gw_antenna_num
                 else:
                     antenna_num = cell_antenna_num
@@ -57,6 +85,24 @@ class Observer():
                 x2 = fac_cbf[i][0]
                 y2 = fac_cbf[i][1]
                 z2 = fac_cbf[i][2]
+
+                # Hack here for gw-sat assignments and cell-sat assignments
+                if fac_id in self.gw_list:
+                    assignment_list = fast_assignments_df.loc[
+                        (fast_assignments_df['time'] == cur_time) &
+                        (fast_assignments_df['gw_id'] == i)
+                    ]['sat_list'].tolist()[0]
+                else:
+                    target_gw = cell_asignments[self.cell_list.index(fac_id)]
+                    assignment_list = fast_assignments_df.loc[
+                        (fast_assignments_df['time'] == cur_time) &
+                        (fast_assignments_df['gw_id'] == target_gw)
+                    ]['sat_list'].tolist()[0]
+
+                # map satellite_id to sat_idx in StarryNet
+                gw_sat_list = [int(self.sat_map_df.loc[
+                    self.sat_map_df['sat_num'] == sat]['k'].values) for sat in assignment_list]
+
                 for j in range(0, sat_num):
                     if sat_lla[cur_time][j][0] >= down_lat and sat_lla[
                             cur_time][j][0] <= up_lat:
@@ -69,6 +115,12 @@ class Observer():
                         if dist < bound_dis:
                             # [satellite index，distance]
                             access_list.update({j: dist})
+
+                sat_to_remove = [sat_idx for sat_idx, _ in access_list.items() if sat_idx not in gw_sat_list]
+                
+                for sat_idx in sat_to_remove:
+                    access_list.pop(sat_idx)
+                
                 if len(access_list) > antenna_num:
                     sorted_access_list = dict(
                         sorted(access_list.items(), key=lambda item: item[1]))
@@ -87,33 +139,85 @@ class Observer():
                                               299792.458) * 1000  # ms
                         delay_matrix[sat_num + i][key] = delay_time
                         delay_matrix[key][sat_num + i] = delay_time
-            for i in range(num_orbits):
-                for j in range(num_sats_per_orbit):
-                    num_sat1 = i * num_sats_per_orbit + j
-                    x1 = sat_cbf[cur_time][num_sat1][0]  # km
-                    y1 = sat_cbf[cur_time][num_sat1][1]
-                    z1 = sat_cbf[cur_time][num_sat1][2]
-                    num_sat2 = i * num_sats_per_orbit + (
-                        j + 1) % num_sats_per_orbit
-                    x2 = sat_cbf[cur_time][num_sat2][0]  # km
-                    y2 = sat_cbf[cur_time][num_sat2][1]
-                    z2 = sat_cbf[cur_time][num_sat2][2]
-                    num_sat3 = ((i + 1) % num_orbits) * num_sats_per_orbit + j
-                    x3 = sat_cbf[cur_time][num_sat3][0]  # km
-                    y3 = sat_cbf[cur_time][num_sat3][1]
-                    z3 = sat_cbf[cur_time][num_sat3][2]
-                    delay1 = math.sqrt(
-                        np.square(x1 - x2) + np.square(y1 - y2) +
-                        np.square(z1 - z2)) / (17.31 / 29.5 *
-                                               299792.458) * 1000  # ms
-                    delay2 = math.sqrt(
-                        np.square(x1 - x3) + np.square(y1 - y3) +
-                        np.square(z1 - z3)) / (17.31 / 29.5 *
-                                               299792.458) * 1000  # ms
-                    delay_matrix[num_sat1][num_sat2] = delay1
-                    delay_matrix[num_sat2][num_sat1] = delay1
-                    delay_matrix[num_sat1][num_sat3] = delay2
-                    delay_matrix[num_sat3][num_sat1] = delay2
+            # for i in range(num_orbits):
+            #     for j in range(num_sats_per_orbit):
+            #         num_sat1 = i * num_sats_per_orbit + j
+            #         x1 = sat_cbf[cur_time][num_sat1][0]  # km
+            #         y1 = sat_cbf[cur_time][num_sat1][1]
+            #         z1 = sat_cbf[cur_time][num_sat1][2]
+            #         num_sat2 = i * num_sats_per_orbit + (
+            #             j + 1) % num_sats_per_orbit
+            #         x2 = sat_cbf[cur_time][num_sat2][0]  # km
+            #         y2 = sat_cbf[cur_time][num_sat2][1]
+            #         z2 = sat_cbf[cur_time][num_sat2][2]
+            #         num_sat3 = ((i + 1) % num_orbits) * num_sats_per_orbit + j
+            #         x3 = sat_cbf[cur_time][num_sat3][0]  # km
+            #         y3 = sat_cbf[cur_time][num_sat3][1]
+            #         z3 = sat_cbf[cur_time][num_sat3][2]
+            #         delay1 = math.sqrt(
+            #             np.square(x1 - x2) + np.square(y1 - y2) +
+            #             np.square(z1 - z2)) / (17.31 / 29.5 *
+            #                                    299792.458) * 1000  # ms
+            #         delay2 = math.sqrt(
+            #             np.square(x1 - x3) + np.square(y1 - y3) +
+            #             np.square(z1 - z3)) / (17.31 / 29.5 *
+            #                                    299792.458) * 1000  # ms
+            #         delay_matrix[num_sat1][num_sat2] = delay1
+            #         delay_matrix[num_sat2][num_sat1] = delay1
+            #         delay_matrix[num_sat1][num_sat3] = delay2
+            #         delay_matrix[num_sat3][num_sat1] = delay2
+
+            # Hack to construct delay matrices from given constellation config
+            for p_idx in range(self.plane_cnt):
+                plane = plane_conf_dfs[p_idx]
+                for i in range(plane.shape[0]):
+                    cur_orbit = plane['constellation'][i]
+                    num_sat_per_orbit = len(cur_orbit)
+                    for idx, j in enumerate(cur_orbit):
+                        cur_sat = int(self.sat_map_df.loc[
+                            (self.sat_map_df['orbit_id'] == plane['orbit_id'][i]) &
+                            (self.sat_map_df['orbit_num'] == j)]['k'].values)
+                        x1 = sat_cbf[cur_time][cur_sat][0]  # km
+                        y1 = sat_cbf[cur_time][cur_sat][1]
+                        z1 = sat_cbf[cur_time][cur_sat][2]
+                        
+                        next_sat_in_orbit = int(self.sat_map_df.loc[
+                            (self.sat_map_df['orbit_id'] == plane['orbit_id'][i]) &
+                            (self.sat_map_df['orbit_num'] == cur_orbit[(idx + 1) % num_sat_per_orbit])
+                        ]['k'].values)
+                        x2 = sat_cbf[cur_time][next_sat_in_orbit][0]  # km
+                        y2 = sat_cbf[cur_time][next_sat_in_orbit][1]
+                        z2 = sat_cbf[cur_time][next_sat_in_orbit][2]
+                        
+                        if j in plane['constellation'][(i+1) % plane.shape[0]]:
+                            sat_in_next_orbit = int(self.sat_map_df.loc[
+                                (self.sat_map_df['orbit_id'] == plane['orbit_id'][(i + 1) % plane.shape[0]]) &
+                                (self.sat_map_df['orbit_num'] == j)
+                            ]['k'].values)
+                        else:
+                            sat_in_next_orbit = cur_sat
+                        x3 = sat_cbf[cur_time][sat_in_next_orbit][0]  # km
+                        y3 = sat_cbf[cur_time][sat_in_next_orbit][1]
+                        z3 = sat_cbf[cur_time][sat_in_next_orbit][2]
+
+                        delay1 = 0
+                        if cur_sat != next_sat_in_orbit:
+                            delay1 = math.sqrt(
+                                np.square(x1 - x2) + np.square(y1 - y2) +
+                                np.square(z1 - z2)) / (17.31 / 29.5 *
+                                                    299792.458) * 1000 #ms
+                        delay2 = 0
+                        if cur_sat != sat_in_next_orbit:
+                            delay2 = math.sqrt(
+                                np.square(x1 - x3) + np.square(y1 - y3) +
+                                np.square(z1 - z3)) / (17.31 / 29.5 *
+                                                    299792.458) * 1000 # ms
+
+                        delay_matrix[cur_sat][next_sat_in_orbit] = delay1
+                        delay_matrix[next_sat_in_orbit][cur_sat] = delay1
+                        delay_matrix[cur_sat][sat_in_next_orbit] = delay2
+                        delay_matrix[sat_in_next_orbit][cur_sat] = delay2                       
+            
             np.savetxt(path + "/delay/" + str(cur_time + 1) + ".txt",
                        delay_matrix,
                        fmt='%.2f',
@@ -152,12 +256,11 @@ class Observer():
                 math.pow(height, 2) + 2 * height * 6371)
         return bound_distance
 
-    def matrix_to_change(self, duration, orbit_number, sat_number, path,
-                         GS_lat_long):
+    def matrix_to_change(self, duration, path, GS_lat_long):
         no_fac = len(GS_lat_long)
         no_geo = 0
         duration = duration - 1
-        no_leo = orbit_number * sat_number
+        no_leo = self.constellation_size
 
         topo_duration = [[[0 for i in range(no_leo + no_geo + no_fac)]
                           for j in range(no_leo + no_geo + no_fac)]
@@ -186,7 +289,7 @@ class Observer():
         for item in changetime:
             Duration.append(item - pretime)
             pretime = item
-        Duration.append(60)
+        Duration.append(self.duration - pretime)
 
         topo_leo_change_path = path + "/Topo_leo_change.txt"
         f = open(topo_leo_change_path, "w")
@@ -243,69 +346,84 @@ class Observer():
         else:
             os.system("mkdir " + path + "/position")
 
-        ts = load.timescale()
-        since = datetime(1949, 12, 31, 0, 0, 0)
-        start = datetime(2020, 1, 1, 0, 0, 0)
-        epoch = (start - since).days
+        # ts = load.timescale()
+        # since = datetime(1949, 12, 31, 0, 0, 0)
+        # start = datetime(2020, 1, 1, 0, 0, 0)
+        # epoch = (start - since).days
+        # inclination = self.inclination * 2 * np.pi / 360
+        # GM = 3.9860044e14
+        # R = 6371393
+        # altitude = self.satellite_altitude * 1000
+        # mean_motion = np.sqrt(GM / (R + altitude)**3) * 60
+        # num_of_orbit = self.orbit_number
+        # sat_per_orbit = self.sat_number
+        # num_of_sat = num_of_orbit * sat_per_orbit
+        # F = 18
+        # bound_dis = self.calculate_bound(
+        #     self.antenna_inclination, self.satellite_altitude) * 29.5 / 17.31
+
+        # duration = self.duration  # second
+        # result = [[] for i in range(duration)]  # LLA result
+        # lla_per_sec = [[] for i in range(duration)]  # LLA result
+
+        # for i in range(num_of_orbit):  # range(num_of_orbit)
+        #     raan = i / num_of_orbit * 2 * np.pi
+        #     for j in range(sat_per_orbit):  # range(sat_per_orbit)
+        #         mean_anomaly = (j * 360 / sat_per_orbit + i * 360 * F /
+        #                         num_of_sat) % 360 * 2 * np.pi / 360
+        #         satrec = Satrec()
+        #         satrec.sgp4init(
+        #             WGS84,  # gravity model
+        #             'i',  # 'a' = old AFSPC mode, 'i' = improved mode
+        #             i * sat_per_orbit + j,  # satnum: Satellite number
+        #             epoch,  # epoch: days since 1949 December 31 00:00 UT
+        #             2.8098e-05,  # bstar: drag coefficient (/earth radii)
+        #             6.969196665e-13,  # ndot: ballistic coefficient (revs/day)
+        #             0.0,  # nddot: second derivative of mean motion (revs/day^3)
+        #             0.001,  # ecco: eccentricity
+        #             0.0,  # argpo: argument of perigee (radians)
+        #             inclination,  # inclo: inclination (radians)
+        #             mean_anomaly,  # mo: mean anomaly (radians)
+        #             mean_motion,  # no_kozai: mean motion (radians/minute)
+        #             raan,  # nodeo: right ascension of ascending node (radians)
+        #         )
+        #         sat = EarthSatellite.from_satrec(satrec, ts)
+        #         cur = datetime(2022, 1, 1, 1, 0, 0)
+        #         t_ts = ts.utc(*cur.timetuple()[:5],
+        #                       range(duration))  # [:4]:minute，[:5]:second
+        #         geocentric = sat.at(t_ts)
+        #         subpoint = wgs84.subpoint(geocentric)
+        #         # list: [subpoint.latitude.degrees] [subpoint.longitude.degrees] [subpoint.elevation.km]
+        #         for t in range(duration):
+        #             lla = '%f,%f,%f\n' % (subpoint.latitude.degrees[t],
+        #                                   subpoint.longitude.degrees[t],
+        #                                   subpoint.elevation.km[t])
+        #             result[t].append(lla)
+        #             lla = []
+        #             lla.append(subpoint.latitude.degrees[t])
+        #             lla.append(subpoint.longitude.degrees[t])
+        #             lla.append(subpoint.elevation.km[t])
+        #             lla_per_sec[t].append(lla)
+
+
+        # Workaround: Use pre-generated satellite positions
+        os.system('cp ' + self.constellation_conf_dir + '/pos/*.txt ' + path + '/position/')
+
+        duration = self.duration  # second
+        num_of_sat = self.constellation_size
         inclination = self.inclination * 2 * np.pi / 360
-        GM = 3.9860044e14
-        R = 6371393
-        altitude = self.satellite_altitude * 1000
-        mean_motion = np.sqrt(GM / (R + altitude)**3) * 60
-        num_of_orbit = self.orbit_number
-        sat_per_orbit = self.sat_number
-        num_of_sat = num_of_orbit * sat_per_orbit
-        F = 18
+        lla_per_sec = [[] for i in range(duration)]  # LLA result
         bound_dis = self.calculate_bound(
             self.antenna_inclination, self.satellite_altitude) * 29.5 / 17.31
 
-        duration = self.duration  # second
-        result = [[] for i in range(duration)]  # LLA result
-        lla_per_sec = [[] for i in range(duration)]  # LLA result
-
-        for i in range(num_of_orbit):  # range(num_of_orbit)
-            raan = i / num_of_orbit * 2 * np.pi
-            for j in range(sat_per_orbit):  # range(sat_per_orbit)
-                mean_anomaly = (j * 360 / sat_per_orbit + i * 360 * F /
-                                num_of_sat) % 360 * 2 * np.pi / 360
-                satrec = Satrec()
-                satrec.sgp4init(
-                    WGS84,  # gravity model
-                    'i',  # 'a' = old AFSPC mode, 'i' = improved mode
-                    i * sat_per_orbit + j,  # satnum: Satellite number
-                    epoch,  # epoch: days since 1949 December 31 00:00 UT
-                    2.8098e-05,  # bstar: drag coefficient (/earth radii)
-                    6.969196665e-13,  # ndot: ballistic coefficient (revs/day)
-                    0.0,  # nddot: second derivative of mean motion (revs/day^3)
-                    0.001,  # ecco: eccentricity
-                    0.0,  # argpo: argument of perigee (radians)
-                    inclination,  # inclo: inclination (radians)
-                    mean_anomaly,  # mo: mean anomaly (radians)
-                    mean_motion,  # no_kozai: mean motion (radians/minute)
-                    raan,  # nodeo: right ascension of ascending node (radians)
-                )
-                sat = EarthSatellite.from_satrec(satrec, ts)
-                cur = datetime(2022, 1, 1, 1, 0, 0)
-                t_ts = ts.utc(*cur.timetuple()[:5],
-                              range(duration))  # [:4]:minute，[:5]:second
-                geocentric = sat.at(t_ts)
-                subpoint = wgs84.subpoint(geocentric)
-                # list: [subpoint.latitude.degrees] [subpoint.longitude.degrees] [subpoint.elevation.km]
-                for t in range(duration):
-                    lla = '%f,%f,%f\n' % (subpoint.latitude.degrees[t],
-                                          subpoint.longitude.degrees[t],
-                                          subpoint.elevation.km[t])
-                    result[t].append(lla)
-                    lla = []
-                    lla.append(subpoint.latitude.degrees[t])
-                    lla.append(subpoint.longitude.degrees[t])
-                    lla.append(subpoint.elevation.km[t])
-                    lla_per_sec[t].append(lla)
-
         for t in range(duration):
             file = path + '/position/' + '%d.txt' % t
-            with open(file, 'w') as fw:
-                fw.writelines(result[t])
+            with open(file, 'r') as f:
+                lines = f.readlines()
+                for line in lines:
+                    lla = line.strip().split(',')
+                    lla = list(map(float, lla))
+                    lla_per_sec[t].append(lla)
             cbf_per_sec = self.to_cbf(lla_per_sec[t], num_of_sat)
             sat_cbf.append(cbf_per_sec)
             sat_lla.append(lla_per_sec[t])
@@ -317,13 +435,12 @@ class Observer():
             np.arccos(6371 / (6371 + self.satellite_altitude) *
                       np.cos(np.radians(inclination)))) - inclination
         self.access_P_L_shortest(sat_cbf, fac_cbf, len(self.GS_lat_long),
-                                 self.sat_number * self.orbit_number,
+                                 self.constellation_size,
                                  self.orbit_number, self.sat_number,
                                  self.duration, self.GS_lat_long, sat_lla,
                                  bound_dis, alpha, self.gw_antenna_number,
                                  self.cell_antenna_number, path)
-        self.matrix_to_change(self.duration, self.orbit_number,
-                              self.sat_number, path, self.GS_lat_long)
+        self.matrix_to_change(self.duration, path, self.GS_lat_long)
 
     def compute_conf(self, sat_node_number, interval, num1, num2, ID, Q,
                      num_backbone, matrix):
@@ -450,29 +567,29 @@ class Observer():
             return False
         if os.path.exists(self.configuration_file_path + "/" + self.file_path +
                           "/conf/bird-" +
-                          str(self.orbit_number * self.sat_number) + "-" +
+                          str(self.constellation_size) + "-" +
                           str(len(self.GS_lat_long))) == True:
             osstr = "rm -f " + self.configuration_file_path+"/"+self.file_path+"/conf/bird-" + \
-                str(self.orbit_number*self.sat_number) + "-" + str(len(self.GS_lat_long)) + "/*"
+                str(self.constellation_size) + "-" + str(len(self.GS_lat_long)) + "/*"
             os.system(osstr)
             sn_remote_cmd(remote_ssh, "mkdir ~/" + self.file_path + "/conf")
             sn_remote_cmd(
                 remote_ssh, "mkdir ~/" + self.file_path + "/conf/bird-" +
-                str(self.orbit_number * self.sat_number) + "-" +
+                str(self.constellation_size) + "-" +
                 str(len(self.GS_lat_long)))
         else:
             os.makedirs(self.configuration_file_path + "/" + self.file_path +
                         "/conf/bird-" +
-                        str(self.orbit_number * self.sat_number) + "-" +
+                        str(self.constellation_size) + "-" +
                         str(len(self.GS_lat_long)))
             sn_remote_cmd(remote_ssh, "mkdir ~/" + self.file_path + "/conf")
             sn_remote_cmd(
                 remote_ssh, "mkdir ~/" + self.file_path + "/conf/bird-" +
-                str(self.orbit_number * self.sat_number) + "-" +
+                str(self.constellation_size) + "-" +
                 str(len(self.GS_lat_long)))
         path = self.configuration_file_path + "/" + self.file_path + "/delay/1.txt"
         matrix = sn_get_param(path)
-        num_backbone = self.orbit_number * self.sat_number + len(
+        num_backbone = self.constellation_size + len(
             self.GS_lat_long)
         error = True
         for i in range(len(self.AS)):
@@ -480,10 +597,10 @@ class Observer():
                 for ID in range(self.AS[i][0], self.AS[i][1] + 1):
                     Q = []
                     error = self.compute_conf(
-                        self.orbit_number * self.sat_number,
+                        self.constellation_size,
                         self.hello_interval, self.AS[i][0], self.AS[i][1], ID,
                         Q, num_backbone, matrix)
-                    self.print_conf(self.orbit_number * self.sat_number,
+                    self.print_conf(self.constellation_size,
                                     len(self.GS_lat_long), ID, Q, remote_ftp)
             else:  # one node in one AS
                 ID = self.AS[i][0]
@@ -530,7 +647,7 @@ class Observer():
                 Q.append("    };")
                 Q.append("    };")
                 Q.append(" }")
-                self.print_conf(self.orbit_number * self.sat_number,
+                self.print_conf(self.constellation_size,
                                 len(self.GS_lat_long), ID, Q, remote_ftp)
 
         return error

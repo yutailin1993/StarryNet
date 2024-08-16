@@ -11,11 +11,13 @@ from starrynet.sn_utils import *
 class StarryNet():
 
     def __init__(self,
+                 constellation_conf_dir,
                  configuration_file_path,
                  GS_lat_long,
                  handover_type,
                  assigned_gw,
                  demands,
+                 constellation_size,
                  hello_interval=10,
                  AS=[],
                  gw_list=[],
@@ -28,8 +30,8 @@ class StarryNet():
         self.orbit_number = sn_args.orbit_number
         self.sat_number = sn_args.sat_number
         self.fac_num = sn_args.fac_num
-        self.constellation_size = self.orbit_number * self.sat_number
-        self.node_size = self.orbit_number * self.sat_number + sn_args.ground_num
+        self.constellation_size = constellation_size
+        self.node_size = self.constellation_size + sn_args.ground_num
         self.link_style = sn_args.link_style
         self.IP_version = sn_args.IP_version
         self.link_policy = sn_args.link_policy
@@ -49,6 +51,8 @@ class StarryNet():
         self.cell_antenna_number  = sn_args.cell_antenna_number
         self.antenna_inclination = sn_args.antenna_inclination
         self.container_global_idx = 1
+        self.plane_number = 2
+
         self.assigned_gw = assigned_gw
         self.demands = demands
         self.handover_type = handover_type
@@ -59,11 +63,13 @@ class StarryNet():
         self.configuration_file_path = os.path.dirname(
             os.path.abspath(configuration_file_path))
         self.file_path = './' + sn_args.cons_name + '-' + str(
-            sn_args.orbit_number) + '-' + str(sn_args.sat_number) + '-' + str(
+            self.constellation_size) + '-' + str(self.ground_num) + '-' + str(
                 sn_args.satellite_altitude) + '-' + str(
                     sn_args.inclination
                 ) + '-' + sn_args.link_style + '-' + sn_args.link_policy
+        self.constellation_conf_dir = os.path.abspath(constellation_conf_dir)
         self.observer = Observer(self.file_path, self.configuration_file_path,
+                                 self.constellation_conf_dir,
                                  self.inclination, self.satellite_altitude,
                                  self.orbit_number, self.sat_number,
                                  self.duration, self.gw_antenna_number,
@@ -71,7 +77,7 @@ class StarryNet():
                                  self.cell_list, GS_lat_long, 
                                  self.antenna_inclination,
                                  self.intra_routing, self.hello_interval,
-                                 self.AS)
+                                 self.constellation_size, self.AS)
         self.docker_service_name = 'constellation-test'
         self.isl_idx = 0
         self.ISL_hub = 'ISL_hub'
@@ -146,7 +152,8 @@ class StarryNet():
             self.remote_ssh, self.remote_ftp, self.orbit_number,
             self.sat_number, self.constellation_size, self.fac_num,
             self.file_path, self.configuration_file_path, self.sat_bandwidth,
-            self.sat_ground_bandwidth, self.sat_loss, self.sat_ground_loss)
+            self.sat_ground_bandwidth, self.sat_loss, self.sat_ground_loss, 
+            self.plane_number, self.constellation_conf_dir)
         isl_thread.start()
         isl_thread.join()
         # self._create_core_network()
@@ -229,7 +236,7 @@ class StarryNet():
         delaypath = self.configuration_file_path + "/" + self.file_path + '/delay/' + str(
             time_index) + '.txt'
         adjacency_matrix = sn_get_param(delaypath)
-        sats = self.orbit_number * self.sat_number
+        sats = self.constellation_size
         for i in range(sats):
             if (float(adjacency_matrix[i][sat_index - 1]) > 0.01):
                 neighbors.append(i + 1)
@@ -240,7 +247,7 @@ class StarryNet():
         delaypath = self.configuration_file_path + "/" + self.file_path + '/delay/' + str(
             time_index) + '.txt'
         adjacency_matrix = sn_get_param(delaypath)
-        sats = self.orbit_number * self.sat_number
+        sats = self.constellation_size
         for i in range(sats, len(adjacency_matrix)):
             if (float(adjacency_matrix[i][sat_index - 1]) > 0.01):
                 GSes.append(i + 1)

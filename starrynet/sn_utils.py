@@ -290,7 +290,7 @@ class sn_Link_Init_Thread(threading.Thread):
     def __init__(self, remote_ssh, remote_ftp, orbit_num, sat_num,
                  constellation_size, fac_num, file_path,
                  configuration_file_path, sat_bandwidth, sat_ground_bandwidth,
-                 sat_loss, sat_ground_loss):
+                 sat_loss, sat_ground_loss, plane_num, constellation_config_path):
         threading.Thread.__init__(self)
         self.remote_ssh = remote_ssh
         self.constellation_size = constellation_size
@@ -304,6 +304,8 @@ class sn_Link_Init_Thread(threading.Thread):
         self.sat_loss = sat_loss
         self.sat_ground_loss = sat_ground_loss
         self.remote_ftp = remote_ftp
+        self.plane_num = plane_num
+        self.constellation_config_path = constellation_config_path
 
     def run(self):
         print('Run in link init thread.')
@@ -316,11 +318,13 @@ class sn_Link_Init_Thread(threading.Thread):
         print('Initializing links ...')
         sn_remote_cmd(
             self.remote_ssh, "python3 " + self.file_path +
-            "/sn_orchestrater.py" + " " + str(self.orbit_num) + " " +
+            "/sn_orchestrater.py" + " " + str(self.plane_num) + " " + 
+            self.constellation_config_path + " " + str(self.orbit_num) + " " +
             str(self.sat_num) + " " + str(self.constellation_size) + " " +
             str(self.fac_num) + " " + str(self.sat_bandwidth) + " " +
             str(self.sat_loss) + " " + str(self.sat_ground_bandwidth) + " " +
-            str(self.sat_ground_loss) + " " + self.file_path + "/1.txt")
+            str(self.sat_ground_loss) + " " + self.file_path + "/1.txt" +
+            " > /tmp/init_link.log 2>&1")
 
 
 # A thread designed for initializing bird routing.
@@ -555,7 +559,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
         ping_threads = []
         perf_threads = []
         traceroute_threads = []
-        timeptr = 2  # current emulating time
+        timeptr = 1  # current emulating time
         
         # init gateway iperf server
         # for gw in self.gw_list:

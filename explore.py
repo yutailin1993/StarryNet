@@ -14,38 +14,44 @@ def load_config(conf_path):
     
 if __name__ == '__main__':
     # first GW then Cells
-    satellites_num = 200
-    AS = [[1, satellites_num + 36]]
-    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 5)]
-    cell_indices = [x for x in range(satellites_num + 5, satellites_num + 37)]
+    constellation_conf_dir = './sim_configs/small_scenario/'
+    
+    satellites_num = 76
+    AS = [[1, satellites_num + 49]]
+    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 6)]
+    cell_indices = [x for x in range(satellites_num + 6, satellites_num + 50)]
     
     handover_type = 'CU-1'
-    
-    with open ('sim_configs/GW_location.txt', 'r') as gw_file:
-        GW_lat_long = [list(map(float, line.strip().replace('[', '').replace(']', '').split(','))) for line in gw_file.readlines()]
-    with open ('sim_configs/UE_location.txt', 'r') as ue_file:
-        UE_lat_long = [list(map(float, line.strip().replace('[', '').replace(']', '').split(','))) for line in ue_file.readlines()]
-    
+
+    # load ground stations latitudes and longitudes
+    gw_df = pd.read_csv(constellation_conf_dir + 'gw.csv')
+    GW_lat_long = [[float(gw_df['latitude'][i]), float(gw_df['longitude'][i])] for i in range(gw_df.shape[0])]
+    ue_df = pd.read_csv(constellation_conf_dir + 'users.csv')
+    UE_lat_long = [[float(ue_df['lat'][i]), float(ue_df['lng'][i])] for i in range(ue_df.shape[0])]
+    # with open ('sim_configs/GW_location.txt', 'r') as gw_file:
+    #     GW_lat_long = [list(map(float, line.strip().replace('[', '').replace(']', '').split(','))) for line in gw_file.readlines()]
+    # with open ('sim_configs/UE_location.txt', 'r') as ue_file:
+    #     UE_lat_long = [list(map(float, line.strip().replace('[', '').replace(']', '').split(','))) for line in ue_file.readlines()]
+
     all_lat_long = GW_lat_long + UE_lat_long
     
     GW_conf_file_path = './gs_config.json'
     
     hello_interval = 1
     
-    # assignments configuration
-    assignments_df = np.genfromtxt('./sim_configs/assignment.csv', delimiter=',', skip_header=1)
-    assignments_time = assignments_df[:, 0]
-    assignments = assignments_df[:, 1:].astype(int)
+    # slow assignments configuration
+    # assignments_df = np.genfromtxt('./sim_configs/assignment.csv', delimiter=',', skip_header=1)
+    # assignments_time = assignments_df[:, 0]
+    assignments = np.genfromtxt('./sim_configs/small_scenario/cell_assignment.csv', delimiter=',', dtype=int)
     
     # user demands
-    demands_df = np.genfromtxt('./sim_configs/user_demand.csv', delimiter=',', skip_header=1)
-    demands_time = demands_df[:, 0]
-    demands = demands_df[:, 1:]*10
-    
-    assert np.all(assignments_time == demands_time)
+    # demands_df = np.genfromtxt('./sim_configs/user_demand.csv', delimiter=',', skip_header=1)
+    # demands_time = demands_df[:, 0]
+    demands = np.ones((assignments.shape[0]))*20e6
     
     print('Start StarryNet.')
-    sn = StarryNet(GW_conf_file_path, all_lat_long, handover_type, assignments[0], demands[0], 
+    sn = StarryNet(constellation_conf_dir, GW_conf_file_path, all_lat_long, 
+                   handover_type, assignments, demands, satellites_num, 
                    hello_interval, AS, gw_indices, cell_indices)
     sn.create_nodes()
     sn.create_links()
