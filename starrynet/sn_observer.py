@@ -43,6 +43,10 @@ class Observer():
         self.AS = AS
         self.plane_cnt = 2
 
+        # # NOTE: baseline 2
+        # self.pre_conn_list = [{} for _ in range(len(self.gw_list) + len(self.cell_list))]
+        # # NOTE: baseline 2 end
+
         self.sat_map_df = pd.read_csv(self.constellation_conf_dir + '/pos/sat_map.csv')
 
     def access_P_L_shortest(self, sat_cbf, fac_cbf, fac_num, sat_num,
@@ -79,6 +83,9 @@ class Observer():
                     antenna_num = cell_antenna_num
                 
                 access_list = {}
+                # # NOTE: baseline 2
+                # conn_list = {}
+                # # NOTE: baseline 2 end
                 fac_lat = float(fac_ll[i][0])  # latitude
                 up_lat = fac_lat + alpha  # bound
                 down_lat = fac_lat - alpha
@@ -115,17 +122,23 @@ class Observer():
                         if dist < bound_dis:
                             # [satellite index，distance]
                             access_list.update({j: dist})
-
-                sat_to_remove = [sat_idx for sat_idx, _ in access_list.items() if sat_idx not in gw_sat_list]
+                # # NOTE algorithm 1
+                # sat_to_remove = [sat_idx for sat_idx, _ in access_list.items() if sat_idx not in gw_sat_list]
                 
-                for sat_idx in sat_to_remove:
-                    access_list.pop(sat_idx)
+                # for sat_idx in sat_to_remove:
+                #     access_list.pop(sat_idx)
+                # # NOTE algorithm 1 end
                 
                 if len(access_list) > antenna_num:
                     sorted_access_list = dict(
                         sorted(access_list.items(), key=lambda item: item[1]))
                     cnt = 0
                     for key, value in sorted_access_list.items():
+                        # # NOTE: baseline 2
+                        # if cur_time != 0:
+                        #     if key not in self.pre_conn_list[i]:
+                        #         continue
+                        # # NOTE: baseline 2 end
                         cnt = cnt + 1
                         if cnt > antenna_num:
                             break
@@ -133,12 +146,38 @@ class Observer():
                                               299792.458) * 1000  # ms
                         delay_matrix[sat_num + i][key] = delay_time
                         delay_matrix[key][sat_num + i] = delay_time
+                        # # NOTE: baseline 2
+                        # conn_list.update({key: value})
+                        # # NOTE: baseline 2 end
+
+                    # # NOTE: baseline 2
+                    # if cnt < antenna_num:
+                    #     for key, value in sorted_access_list.items():
+                    #         if delay_matrix[sat_num + i][key] != 0:
+                    #             continue
+                    #         cnt = cnt + 1
+                    #         if cnt > antenna_num:
+                    #             break
+                    #         delay_time = value / (17.31 / 29.5 *
+                    #                           299792.458) * 1000  # ms
+                    #         delay_matrix[sat_num + i][key] = delay_time
+                    #         delay_matrix[key][sat_num + i] = delay_time
+                    #         conn_list.update({key: value})
+                    # # NOTE: baseline 2 end
+
                 elif len(access_list) != 0:
                     for key, value in access_list.items():
                         delay_time = value / (17.31 / 29.5 *
                                               299792.458) * 1000  # ms
                         delay_matrix[sat_num + i][key] = delay_time
                         delay_matrix[key][sat_num + i] = delay_time
+                        # # NOTE: baseline 2
+                        # conn_list.update({key: value})
+                        # # NOTE: baseline 2 end
+                # # NOTE: baseline 2
+                # self.pre_conn_list[i] = conn_list
+                # # NOTE: baseline 2 end
+ 
             # for i in range(num_orbits):
             #     for j in range(num_sats_per_orbit):
             #         num_sat1 = i * num_sats_per_orbit + j

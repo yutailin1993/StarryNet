@@ -1,5 +1,7 @@
 import argparse
 import subprocess
+import threading
+import random
 import math
 import time
 import numpy as np
@@ -12,7 +14,8 @@ class ExpOps():
                  assignments,
                  results_dir, 
                  gw_indices, 
-                 cell_indices,):
+                 cell_indices,
+                 constellation_conf_dir,):
         self.current_time = current_time
         self.sim_time = sim_time
         self.user_demands = user_demands
@@ -20,15 +23,24 @@ class ExpOps():
         self.results_dir = results_dir
         self.gw_indices = gw_indices
         self.cell_indices = cell_indices
+        self.constellation_conf_dir = constellation_conf_dir
         
         self.container_name_prefix = 'ovs_container_'
         self.perf_client_on = False
         self.set_ping_on = False
+        self.perf_threads = []
+        self.ping_threads = []
         
         self.current_time_idx = int(self.current_time / 5)
         
     def __del__(self):
         if self.perf_client_on:
+            for thread in self.perf_threads:
+                thread.join()
+            for thread in self.ping_threads:
+                thread.join()
+            self.perf_threads = []
+            self.ping_threads = []
             self.stop_perf_clients()
     
     def _establish_perf_server(self, src, dst):
@@ -44,11 +56,18 @@ class ExpOps():
         dst_addr = '9.{}.{}.10'.format(dst, dst)
         
         # save iperf results
-        command = ['docker', 'exec', '-d', src_container, 'bash', '-c', 
-            'iperf3 -c {} -p 5{} -i {} -b {}M -t {} >> /tmp/iperf_{}_results.txt'.format(
-            dst_addr, src, 1, demand, math.ceil(self.sim_time), src)]
-        
-        subprocess.run(command, capture_output=False, text=True)
+        # command = ['docker', 'exec', '-d', src_container, 'bash', '-c', 
+        #     'iperf3 -c {} -p 5{} -i {} -b {}M -t {} >> /tmp/iperf_{}_results.txt'.format(
+        #     dst_addr, src, 1, demand, math.ceil(self.sim_time+1), src)]
+
+        command = 'docker exec -d {} bash -c "echo current_time: {}, sim_time: {} >> /tmp/iperf_{}_results.txt"'.format(
+            src_container, self.current_time, int(self.sim_time), src) + ' && ' + \
+            'docker exec -d {} bash -c "iperf3 -c {} -p 5{} -i {} -b {}M -t {} >> /tmp/iperf_{}_results.txt"'.format(
+            src_container, dst_addr, src, 1, demand, math.ceil(self.sim_time+2), src)
+
+        thread = threading.Thread(target=run_command, args=(command,))
+
+        return thread 
     
     def _stop_perf_server(self, gw):
         gw_container = self.container_name_prefix + str(gw)
@@ -87,13 +106,18 @@ class ExpOps():
         src_container = self.container_name_prefix + str(src)
         dst_addr = '9.{}.{}.10'.format(dst, dst)
         
-        command = ['docker', 'exec', '-d', src_container, 'bash', '-c',
-            'ping -c {} {} >> /tmp/ping_{}_results.txt'.format(
-            ping_count, dst_addr, src)]
+        # command = ['docker', 'exec', '-d', src_container, 'bash', '-c',
+        #     'ping -c {} {} >> /tmp/ping_{}_results.txt'.format(
+        #     ping_count, dst_addr, src)]
+
+        command = 'docker exec -d {} bash -c "echo current_time: {}, sim_time: {} >> /tmp/ping_{}_results.txt"'.format(
+            src_container, self.current_time, int(self.sim_time), src) + ' && ' + \
+            'docker exec -d {} bash -c "ping -c {} {} >> /tmp/ping_{}_results.txt"'.format(
+            src_container, ping_count, dst_addr, src)
+
+        thread = threading.Thread(target=run_command, args=(command,))
         
-        result = subprocess.run(command, capture_output=False, text=True)
-        
-        return result
+        return thread
     
     def _establish_traceroute(self, src, dst):
         src_container = self.container_name_prefix + str(src)
@@ -106,36 +130,68 @@ class ExpOps():
         
         return result.stdout
     
-    def perform_flood(self, dynamic_gw=False):
-        for cell_idx, cell in enumerate(self.cell_indices):
+    def perform_flood(self, dynamic_gw=False, dynamic_demand=False):
+        tmp_cell_indices = self.cell_indices.copy()
+        random.shuffle(tmp_cell_indices)
+                
+        for cell in tmp_cell_indices:
             print ("Setting up iperf on cell " + str(cell) + "...")
+            cell_idx = self.cell_indices.index(cell)
+            src = cell
+            if dynamic_gw is True:
+                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
+            else:
+                dst = self.gw_indices[int(self.assignments[0, cell_idx])]
+
+            if dynamic_demand is True:
+                demand = self.user_demands[self.current_time_idx, cell_idx]
+            else:
+                demand = self.user_demands[0, cell_idx]
+                
+            self._establish_perf_server(src, dst)
+            
+            self.perf_threads.append(self._establish_perf_client(src, dst, demand))
+
+        for thread in self.perf_threads:
+            thread.start()
+
+        time.sleep(5)
+
+        for thread in self.perf_threads:
+            thread.join(timeout=2)
+            
+        self.perf_client_on = True
+            
+    def set_ping(self, dynamic_gw=False):
+        tmp_cell_indices = self.cell_indices.copy()
+        random.shuffle(tmp_cell_indices)
+        
+        for cell in tmp_cell_indices:
+            cell_idx = self.cell_indices.index(cell)
+            src = cell
+            if dynamic_gw is True:
+                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
+            else:
+                dst = self.gw_indices[int(self.assignments[0, cell_idx])]
+
+            self.ping_threads.append(self._establish_ping(src, dst, ping_count=5))
+
+        for thread in self.ping_threads:
+            thread.start()
+
+        for thread in self.ping_threads:
+            thread.join(timeout=2)
+            
+        self.set_ping_on = True
+       
+    def perform_traceroute(self, dynamic_gw=False):
+        for cell_idx, cell in enumerate(self.cell_indices):
             src = cell
             if dynamic_gw is True:
                 dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
                 
-            demand = self.user_demands[self.current_time_idx, cell_idx]
-            self._establish_perf_server(src, dst)
-            self._establish_perf_client(src, dst, demand)
-            
-        self.perf_client_on = True
-            
-    def set_ping(self, dynamic_gw=False):
-        for cell_idx, cell in enumerate(self.cell_indices):
-            src = cell
-            if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
-            else:
-                dst = self.gw_indices[int(self.assignments[0, cell_idx])]
-            self._establish_ping(src, dst, ping_count=5)
-            
-        self.set_ping_on = True
-       
-    def perform_traceroute(self):
-        for cell_idx, cell in enumerate(self.cell_indices):
-            src = cell
-            dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
             file_name = 'traceroute_{}_{}_{}.txt'.format(self.current_time, src, dst)
             
             result = self._establish_traceroute(src, dst)
@@ -148,7 +204,6 @@ class ExpOps():
         if self.perf_client_on is True:
             for cell_idx, cell in enumerate(self.cell_indices):
                 src = cell
-                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
                 src_container = self.container_name_prefix + str(cell)
                 result_file = 'iperf_{}_results.txt'.format(src)
                 command = ['docker', 'cp', 
@@ -160,7 +215,6 @@ class ExpOps():
         if self.set_ping_on is True:
             for cell_idx, cell in enumerate(self.cell_indices):
                 src = cell
-                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
                 src_container = self.container_name_prefix + str(cell)
 
                 result_file = 'ping_{}_results.txt'.format(src)
@@ -180,11 +234,16 @@ class ExpOps():
             
         self.perf_client_on = False
 
+def run_command(command):
+    subprocess.Popen(command, shell=True)
 
 def parseargs():
     parser = argparse.ArgumentParser(description='Description of your program')
     parser.add_argument('current_time', type=int, help='Current time in the simulation')
     parser.add_argument('sim_time', type=float, help='Simulation time')
+    parser.add_argument('--constellation_conf_dir', type=str,
+                        default='./sim_configs/small_scenario/',
+                        help='Path to the constellation configuration directory')
     parser.add_argument('--collect-results', type=int, default=0, help='Collect results')
     parser.add_argument('--results-dir', type=str, 
                         default='./results/',
@@ -198,32 +257,42 @@ def main():
     current_time = args.current_time
     results_dir = args.results_dir
     sim_time = args.sim_time
+    constellation_conf_dir = args.constellation_conf_dir
     
-    satellites_num = 200
+    satellites_num = 76
     
-    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 5)]
-    cell_indices = [x for x in range(satellites_num + 5, satellites_num + 37)]
+    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 6)]
+    cell_indices = [x for x in range(satellites_num + 6, satellites_num + 50)]
+
+    # assignments configurationen
+    assignments = np.genfromtxt('./sim_configs/small_scenario/cell_assignment.csv', delimiter=',', dtype=int)
+
+    if (assignments.ndim == 1):
+        assignments = np.expand_dims(assignments, axis=0)
     
-    # assignments configuration
-    assignments_df = np.genfromtxt('./sim_configs/assignment.csv', delimiter=',', skip_header=1)
-    assignments_time = assignments_df[:, 0]
-    assignments = assignments_df[:, 1:].astype(int)
+    # assignments_df = np.genfromtxt('./sim_configs/assignment.csv', delimiter=',', skip_header=1)
+    # assignments_time = assignments_df[:, 0]
+    # assignments = assignments_df[:, 1:].astype(int)
     
-    a = np.array(assignments.shape)
+    # a = np.array(assignments.shape)
     
-    # user demands
-    demands_df = np.genfromtxt('./sim_configs/user_demand.csv', delimiter=',', skip_header=1)
-    demands_time = demands_df[:, 0]
-    demands = demands_df[:, 1:]*10
-    
+    # # user demands
+    # demands_df = np.genfromtxt('./sim_configs/user_demand.csv', delimiter=',', skip_header=1)
+    # demands_time = demands_df[:, 0]
+    # demands = demands_df[:, 1:]*10
+    demands = np.ones((assignments.shape[1]))*600 # Mbps
+
+    if (demands.ndim == 1):
+        demands = np.expand_dims(demands, axis=0)
+
     # initialize
-    exp_ops = ExpOps(current_time, sim_time, demands, a, results_dir,
-                     gw_indices, cell_indices)
+    exp_ops = ExpOps(current_time, sim_time, demands, assignments, results_dir,
+                     gw_indices, cell_indices, constellation_conf_dir)
     
-    exp_ops.perform_flood(dynamic_gw=False)
+    exp_ops.perform_flood(dynamic_gw=False, dynamic_demand=False)
     
     print("start traceroute")
-    exp_ops.perform_traceroute()
+    exp_ops.perform_traceroute(dynamic_gw=False)
     time.sleep(10)
     print("traceroute done")
     
@@ -232,7 +301,6 @@ def main():
     time.sleep(10)
     print("ping done")
     
-    # exp_ops.perform_flood(safe_result=True)
     if args.collect_results == 1:
         exp_ops.collect_results()
     

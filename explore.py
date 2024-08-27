@@ -47,7 +47,7 @@ if __name__ == '__main__':
     # user demands
     # demands_df = np.genfromtxt('./sim_configs/user_demand.csv', delimiter=',', skip_header=1)
     # demands_time = demands_df[:, 0]
-    demands = np.ones((assignments.shape[0]))*20e6
+    demands = np.ones((assignments.shape[0]))*600 # Mbps
     
     print('Start StarryNet.')
     sn = StarryNet(constellation_conf_dir, GW_conf_file_path, all_lat_long, 

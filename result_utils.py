@@ -15,8 +15,8 @@ def load_delay_matrix(file_):
 def get_handover_delay(cell, target_sat, pre_sat, gw, current_time, 
                          handover_type, file_dir):
     # load delay matrix
-    current_topo_path = file_dir + '/delay/' + str(current_time) + '.txt'
-    pre_topo_path = file_dir + '/delay/' + str(current_time - 1) + '.txt'
+    current_topo_path = file_dir + str(current_time) + '.txt'
+    pre_topo_path = file_dir + str(current_time - 1) + '.txt'
     
     curr_matrix = load_delay_matrix(current_topo_path)
     pre_matrix = load_delay_matrix(pre_topo_path)
@@ -69,50 +69,77 @@ def extract_perf_sections(perf_file):
         iperf_output = f.read()
     
     iperf_lines = iperf_output.split('\n')
-    
-    for line in iperf_lines:
-        if '- - - - - - - - - - - - - - - - - - - - - - - - -' in line:
+
+    iperf_start_times = []
+    iperf_sim_times = []
+    iperf_start = False
+
+    current_time = sim_time = -1
+    for line_idx, line in enumerate(iperf_lines):
+        if line_idx == len(iperf_lines)-1:
+            break
+        if 'current_time' in line:
+            current_time = int(line.split(', ')[0].split(': ')[1])
+            sim_time = int(line.split(', ')[1].split(': ')[1])
+            if 'Connecting to' in iperf_lines[line_idx+1]:
+                iperf_start_times.append(current_time)
+                iperf_sim_times.append(sim_time)
+                iperf_start = True
+        if 'connected to' in line and iperf_start:
             roi = True
             continue
-        if 'iperf Done.' in line:
+        if '- - - - - - - - - - - - -' in iperf_lines[line_idx+1]:
             roi = False
+            iperf_start = False
+            current_time = sim_time = -1
         if roi:
             lines.append(line)
-    
+
     if lines == []:
         print("file empty: " + perf_file)
         return None
     
     result_lines = [lines[0]]
     
-    for line in lines[1:]:
-        if 'ID' not in line and line != '':
-            result_lines.append(line) 
+    for line_idx, line in enumerate(lines):
+        if line_idx == 0:
+            continue
+        if 'ID' not in line and line != '' and '0.00-1.00' not in line:
+            result_lines.append(line)
 
     results = '\n'.join(result_lines)
     
-    return results
+    return results, iperf_start_times, iperf_sim_times
 
 def parse_perf_results(input_lines):
     # Extract bandwidth values using regular expressions
-    transfer_values = re.findall(r'(\d+\.\d+|\d+)\sMBytes', input_lines)
-    transfer_rates = re.findall(r'(\d+\.\d+|\d+)\sMbits/sec', input_lines)
+    transfer_values = re.findall(r'sec\s*(\d+\.\d+|\d+)\s*MBytes', input_lines)
+    transfer_rates_tuple = re.findall(r'(\d+\.\d+|\d+)\s(M|G)bits/sec', input_lines)
+
+    transfer_rates_out = []
+    for tup in transfer_rates_tuple:
+        if tup[1] == 'M':
+            rate = float(tup[0])
+        elif tup[1] == 'G':
+            rate = float(tup[0]) * 1000
+        else:
+            raise ValueError("Invalid rate unit.")
+        transfer_rates_out.append(rate)
     
     transfer_values_out = [float(x) for x in transfer_values]
-    transfer_rates_out = [float(x) for x in transfer_rates]
-    
+   
     return transfer_values_out, transfer_rates_out
     
 def aggregate_results(transfer_values):
     # Convert extracted values to integers and sum them up
-    total_transfer_bytes = sum(bt for bt in transfer_values) / 2
+    total_transfer_bytes = sum(Bt for Bt in transfer_values)
     
     return total_transfer_bytes
 
 def apply_handover_delay(cell, target_sat, pre_sat, gw, in_transferred, transfer_rate,
-                         current_time, handover_type, topo_dir):
+                         current_time, handover_type, delay_dir):
     handover_delay = get_handover_delay(cell, target_sat, pre_sat, gw, current_time,
-                                        handover_type, topo_dir)
+                                        handover_type, delay_dir)
     transferred = in_transferred - handover_delay * transfer_rate / 8
     
     if transferred < 0:
@@ -139,7 +166,7 @@ def construct_change_matrix(cell_num, topo_change_file, cell_indices, sim_durati
         words = line.split()
         if words[0] == 'time':
             print ("Time: " + words[1].strip())
-            if (int(words[1].strip(':')) == sim_duration):
+            if (int(words[1].strip(':')) == sim_duration+1):
                 break
             
             change_idx += 1
@@ -179,34 +206,71 @@ def construct_change_matrix(cell_num, topo_change_file, cell_indices, sim_durati
     
     return change_matrix, change_time
 
-def handover_through_time(cell, gw, change_matrix, change_time, cell_indices,
-                          transferred_list, trans_rates_list, handover_type, topo_dir):
+def handover_through_time(cell, gw_list, iperf_start_times, iperf_sim_times, change_matrix, change_time, cell_indices,
+                          transferred_list, trans_rates_list, handover_type, delay_dir):
     for idx, change in enumerate(change_matrix[cell_indices.index(cell)]):
         pre_sat = change[0] 
         target_sat = change[1]
-        if pre_sat != -1 and target_sat != -1 and 2*idx < len(transferred_list):
-            curr_time = change_time[idx]
-            transferred_list[2*idx] = apply_handover_delay(cell, 
-                                                           target_sat,
-                                                           pre_sat,
-                                                           gw,
-                                                           transferred_list[2*idx],
-                                                           trans_rates_list[2*idx],
-                                                           curr_time,
-                                                           handover_type,
-                                                           topo_dir)
-            
-            transferred_list[2*idx+1] = apply_handover_delay(cell,
-                                                             target_sat,
-                                                             pre_sat,
-                                                             gw,
-                                                             transferred_list[2*idx+1],
-                                                             trans_rates_list[2*idx+1],
-                                                             curr_time,
-                                                             handover_type,
-                                                             topo_dir)
-            
+        curr_time = change_time[idx]
+        iperf_start = curr_time - 1
+        if iperf_start not in iperf_start_times or (pre_sat == -1 or target_sat == -1):
+            continue
+        gw = gw_list[iperf_start_times.index(iperf_start)]
+        trans_idx = sum(iperf_sim_times[:iperf_start_times.index(iperf_start)])
+        transferred_list[trans_idx] = apply_handover_delay(cell, 
+                                                       target_sat,
+                                                       pre_sat,
+                                                       gw,
+                                                       transferred_list[trans_idx],
+                                                       trans_rates_list[trans_idx],
+                                                       curr_time,
+                                                       handover_type,
+                                                       delay_dir)
+        
     return transferred_list
+
+def get_throughput_results(file_dir, cell_indices, gw_indices, assignments, duration,
+                           demands, change_time, change_matrix, handover_type, delay_dir):
+    total_transfer = 0
+    total_transfer_per_cell = []
+
+    total_demands_per_cell = []
+    total_demands = 0
+
+    for cell in cell_indices:
+        perf_file = file_dir + '/iperf/iperf_' + str(cell) + '_results.txt'
+        sections, iperf_start_times, iperf_sim_times = extract_perf_sections(perf_file)
+
+        if sections is None:
+            continue
+        transferred_list, trans_rates_list = parse_perf_results(sections)
+        # print ("cell: {}".format(cell))
+        # print (len(transferred_list))
+        # print (len(trans_rates_list))
+        # print (sum(iperf_sim_times))
+
+        assert (len(transferred_list) == len(trans_rates_list) == sum(iperf_sim_times))
+
+        if len(assignments.shape) == 1:
+            gw_list = [gw_indices[assignments[cell_indices.index(cell)]] for _ in range(len(iperf_start_times))]
+        else:
+            gw_list = [gw_indices[assignments[iperf_start_times[t],cell_indices.index(cell)]] for t in iperf_start_times]
+
+        transferred_list = handover_through_time(cell, gw_list, iperf_start_times, 
+                                                 iperf_sim_times, change_matrix,
+                                                 change_time, cell_indices, transferred_list,
+                                                 trans_rates_list, handover_type, delay_dir)
+
+
+        transferred = aggregate_results(transferred_list)
+        total_transfer_per_cell.append(transferred)
+
+    total_transfer = sum(total_transfer_per_cell)
+
+    total_demands_per_cell = demands*duration/8
+    total_demands = sum(total_demands_per_cell)
+
+    return total_transfer, total_demands, total_transfer_per_cell, total_demands_per_cell
                                                            
 
 
