@@ -65,10 +65,10 @@ class Observer():
             
             plane_groups.append(plane_conf_dfs[p_idx]['orbit_id'].tolist())
 
-        fast_assignments_df = pd.read_csv(self.constellation_conf_dir + '/' + 'fast_assignment.csv')
-        for i in range(fast_assignments_df.shape[0]):
-            fast_assignments_df['sat_list'][i] = list(map(int, 
-                            fast_assignments_df['sat_list'][i].strip('][').split()))
+        sat_gw_assignments_df = pd.read_csv(self.constellation_conf_dir + '/' + 'sat_gw_assignment.csv')
+        for i in range(sat_gw_assignments_df.shape[0]):
+            sat_gw_assignments_df['sat_list'][i] = list(map(int, 
+                            sat_gw_assignments_df['sat_list'][i].strip('][').split()))
 
         cell_asignments = np.genfromtxt(self.constellation_conf_dir + '/cell_assignment.csv', 
                                            delimiter=',').tolist()
@@ -95,15 +95,15 @@ class Observer():
 
                 # Hack here for gw-sat assignments and cell-sat assignments
                 if fac_id in self.gw_list:
-                    assignment_list = fast_assignments_df.loc[
-                        (fast_assignments_df['time'] == cur_time) &
-                        (fast_assignments_df['gw_id'] == i)
+                    assignment_list = sat_gw_assignments_df.loc[
+                        (sat_gw_assignments_df['time'] == cur_time) &
+                        (sat_gw_assignments_df['gw_id'] == i)
                     ]['sat_list'].tolist()[0]
                 else:
                     target_gw = cell_asignments[self.cell_list.index(fac_id)]
-                    assignment_list = fast_assignments_df.loc[
-                        (fast_assignments_df['time'] == cur_time) &
-                        (fast_assignments_df['gw_id'] == target_gw)
+                    assignment_list = sat_gw_assignments_df.loc[
+                        (sat_gw_assignments_df['time'] == cur_time) &
+                        (sat_gw_assignments_df['gw_id'] == target_gw)
                     ]['sat_list'].tolist()[0]
 
                 # map satellite_id to sat_idx in StarryNet
@@ -122,12 +122,12 @@ class Observer():
                         if dist < bound_dis:
                             # [satellite index，distance]
                             access_list.update({j: dist})
-                # # NOTE algorithm 1
-                # sat_to_remove = [sat_idx for sat_idx, _ in access_list.items() if sat_idx not in gw_sat_list]
+                # NOTE algorithm 1
+                sat_to_remove = [sat_idx for sat_idx, _ in access_list.items() if sat_idx not in gw_sat_list]
                 
-                # for sat_idx in sat_to_remove:
-                #     access_list.pop(sat_idx)
-                # # NOTE algorithm 1 end
+                for sat_idx in sat_to_remove:
+                    access_list.pop(sat_idx)
+                # NOTE algorithm 1 end
                 
                 if len(access_list) > antenna_num:
                     sorted_access_list = dict(

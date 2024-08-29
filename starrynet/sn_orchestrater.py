@@ -78,7 +78,7 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
                       " tc qdisc add dev B" +
                       str(current_sat + 1) +
                       "-eth" + str(next_sat_in_orbit + 1) +
-                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
+                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "gbit")
         print('[Add current node:]' + 'docker network connect ' + ISL_name + " " +
               str(container_id_list[current_sat]) +
               " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".40")
@@ -110,7 +110,7 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
                       str(container_id_list[next_sat_in_orbit]) + " tc qdisc add dev B" +
                       str(next_sat_in_orbit + 1) + "-eth" +
                       str(current_sat + 1) +
-                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
+                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "gbit")
         print('[Add down node:]' + 'docker network connect ' + ISL_name + " " +
               str(container_id_list[next_sat_in_orbit]) +
               " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".10")
@@ -169,7 +169,7 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
                       " tc qdisc add dev B" +
                       str(current_sat + 1) +
                       "-eth" + str(sat_in_next_orbit + 1) +
-                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
+                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "gbit")
         print('[Add current node:]' + 'docker network connect ' + ISL_name + " " +
               str(container_id_list[current_sat]) +
               " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".30")
@@ -203,7 +203,7 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
                       " tc qdisc add dev B" +
                       str(sat_in_next_orbit + 1) + "-eth" +
                       str(current_sat + 1) +
-                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
+                      " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "gbit")
         print('[Add right node:]' + 'docker network connect ' + ISL_name + " " +
               str(container_id_list[sat_in_next_orbit]) +
               " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".20")
@@ -232,10 +232,10 @@ def sn_establish_ISLs(container_id_list, matrix, orbit_num, sat_num,
         
         plane_groups.append(plane_conf_dfs[p_idx]['orbit_id'].tolist())
 
-    fast_assignments_df = pd.read_csv(constellation_conf_dir + '/fast_assignment.csv')
-    for i in range(fast_assignments_df.shape[0]):
-        fast_assignments_df['sat_list'][i] = list(map(int, 
-                        fast_assignments_df['sat_list'][i].strip('][').split()))
+    sat_gw_assignments_df = pd.read_csv(constellation_conf_dir + '/sat_gw_assignment.csv')
+    for i in range(sat_gw_assignments_df.shape[0]):
+        sat_gw_assignments_df['sat_list'][i] = list(map(int, 
+                        sat_gw_assignments_df['sat_list'][i].strip('][').split()))
 
     ISL_threads = []
     # for current_orbit_id in range(0, orbit_num):
@@ -353,7 +353,7 @@ def sn_establish_GSL(container_id_list, matrix, fac_num, constellation_size, bw,
                           str(j) + " up")
                 os.system("docker exec -d " + str(container_id_list[i - 1]) +
                           " tc qdisc add dev B" + str(i - 1 + 1) + "-eth" +
-                          str(j) + " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "Gbps")
+                          str(j) + " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "gbit")
             print('[Add current node:]' + 'docker network connect ' +
                   GSL_name + " " + str(container_id_list[i - 1]) + " --ip 9." +
                   str(address_16_23) + "." + str(address_8_15) + ".50")
@@ -381,7 +381,7 @@ def sn_establish_GSL(container_id_list, matrix, fac_num, constellation_size, bw,
                           " tc qdisc add dev B" + str(j) + "-eth" +
                           str(i - 1 + 1) + " root netem delay " + str(delay) +
                           "ms loss " + str(loss) + "% rate " + str(bw) +
-                          "Gbps")
+                          "gbit")
             print('[Add right node:]' + 'docker network connect ' + GSL_name +
                   " " + str(container_id_list[j - 1]) + " --ip 9." +
                   str(address_16_23) + "." + str(address_8_15) + ".60")

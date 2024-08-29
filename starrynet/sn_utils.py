@@ -67,8 +67,8 @@ def sn_load_file(path, GS_lat_long):
     data['link_policy'] = table["Link policy"]
     data['handover_policy'] = table["Handover policy"]
     data['update_time'] = table["update_time (s)"]
-    data['sat_bw'] = table["satellite link bandwidth (\"X\" Gbps)"]
-    data['sat_ground_bw'] = table["sat-ground bandwidth (\"X\" Gbps)"]
+    data['sat_bw'] = table["satellite link bandwidth (\"X\" gbit)"]
+    data['sat_ground_bw'] = table["sat-ground bandwidth (\"X\" gbit)"]
     data['sat_loss'] = table["satellite link loss (\"X\"% )"]
     data['sat_ground_loss'] = table["sat-ground loss (\"X\"% )"]
     data['ground_num'] = table["GS number"]
@@ -1061,7 +1061,7 @@ def connect_node_to_GSL_link(container_id_list, GSL_name, node_type, sat_id, cel
     os.system('docker exec -d ' + str(container_id_list[sat_id - 1]) +
               ' tc qdisc add dev ' + interface_name +
               ' root net delay ' + str(delay) + 'ms' + ' loss ' + str(loss) + '%'
-              ' rate ' + str(bw) + 'Gbps')
+              ' rate ' + str(bw) + 'gbit')
 
 def sn_handover_del_GSL_link(container_id_list, cell_id, sat_id):
     GSL_name = 'GSL' + str(sat_id) + '-' + str(cell_id)
@@ -1278,7 +1278,7 @@ def sn_establish_new_GSL(container_id_list, matrix, constellation_size, bw,
     sn_remote_cmd(
         remote_ssh, "docker exec -d " + str(container_id_list[i - 1]) +
         " tc qdisc add dev B" + str(i - 1 + 1) + "-eth" + str(j) +
-        " root netem rate " + str(bw) + "Gbps")
+        " root netem rate " + str(bw) + "gbit")
     print('[Add current node:]' + 'docker network connect ' + GSL_name + " " +
           str(container_id_list[i - 1]) + " --ip 9." + str(address_16_23) +
           "." + str(address_8_15) + ".50")
@@ -1321,7 +1321,7 @@ def sn_establish_new_GSL(container_id_list, matrix, constellation_size, bw,
     sn_remote_cmd(
         remote_ssh, "docker exec -d " + str(container_id_list[j - 1]) +
         " tc qdisc add dev B" + str(j) + "-eth" + str(i - 1 + 1) +
-        " root netem rate " + str(bw) + "Gbps")
+        " root netem rate " + str(bw) + "gbit")
     print('[Add right node:]' + 'docker network connect ' + GSL_name + " " +
           str(container_id_list[j - 1]) + " --ip 10." + str(address_16_23) +
           "." + str(address_8_15) + ".60")

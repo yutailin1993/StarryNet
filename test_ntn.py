@@ -59,11 +59,11 @@ if __name__ == "__main__":
           if neighbors_index_1 != neighbors_index: 
              HO = HO + 1
              
-             #Update the "sat-ground bandwidth (\"X\" Gbps)" value to be 1 less than the current value
-             current_sat_ground_bandwidth = config_data["sat-ground bandwidth (\"X\" Gbps)"]
+             #Update the "sat-ground bandwidth (\"X\" gbit)" value to be 1 less than the current value
+             current_sat_ground_bandwidth = config_data["sat-ground bandwidth (\"X\" gbit)"]
              new_sat_ground_bandwidth = current_sat_ground_bandwidth - 1
-             #config_data["satellite link bandwidth (\"X\" Gbps)"] = 5
-             config_data["sat-ground bandwidth (\"X\" Gbps)"] = new_sat_ground_bandwidth
+             #config_data["satellite link bandwidth (\"X\" gbit)"] = 5
+             config_data["sat-ground bandwidth (\"X\" gbit)"] = new_sat_ground_bandwidth
 
              # Write the updated data back to the JSON file
              with open('config.json', 'w') as f:
