@@ -53,6 +53,7 @@ class Observer():
                             num_orbits, num_sats_per_orbit, duration, fac_ll,
                             sat_lla, bound_dis, alpha, gw_antenna_num,
                             cell_antenna_num, path):
+        # Load constellation planes
         plane_conf_dfs = [
             pd.read_csv(self.constellation_conf_dir + '/pos/' + f'constellation_{i}.csv') \
                 for i in range(self.plane_cnt)]
@@ -65,13 +66,23 @@ class Observer():
             
             plane_groups.append(plane_conf_dfs[p_idx]['orbit_id'].tolist())
 
+        # Load inter-plane ISL config
+        inter_plane_ISL_df = pd.read_csv(self.constellation_conf_dir + '/pos/' + 'inter_plane_ISL.csv')
+
+        # Load fast assignment csv
         sat_gw_assignments_df = pd.read_csv(self.constellation_conf_dir + '/' + 'sat_gw_assignment.csv')
         for i in range(sat_gw_assignments_df.shape[0]):
             sat_gw_assignments_df['sat_list'][i] = list(map(int, 
-                            sat_gw_assignments_df['sat_list'][i].strip('][').split()))
+                            sat_gw_assignments_df['sat_list'][i].strip('][').split(', ')))
 
+        # Load slow assignment csv
         cell_asignments = np.genfromtxt(self.constellation_conf_dir + '/cell_assignment.csv', 
-                                           delimiter=',').tolist()
+                                           delimiter=',', dtype=int).tolist()
+
+        sat_cell_assignments = []
+        for gw_idx in range(len(self.gw_list)):
+            assign_csv = pd.read_csv(self.constellation_conf_dir + '/sat_cell_assignments/' + f'gw0{gw_idx}_flows.csv')
+            sat_cell_assignments.append(assign_csv)
         
         delay_matrix = np.zeros((fac_num + sat_num, fac_num + sat_num))
         for cur_time in range(duration):
@@ -100,31 +111,40 @@ class Observer():
                         (sat_gw_assignments_df['gw_id'] == i)
                     ]['sat_list'].tolist()[0]
                 else:
-                    target_gw = cell_asignments[self.cell_list.index(fac_id)]
-                    assignment_list = sat_gw_assignments_df.loc[
-                        (sat_gw_assignments_df['time'] == cur_time) &
-                        (sat_gw_assignments_df['gw_id'] == target_gw)
-                    ]['sat_list'].tolist()[0]
+                    target_gw_idx = cell_asignments[self.cell_list.index(fac_id)]
+                    sat_cell_df = sat_cell_assignments[target_gw_idx]
+                    target_row = sat_cell_df.loc[
+                        (sat_cell_df['t'] == cur_time) &
+                        (sat_cell_df['cell'] == self.cell_list.index(fac_id))
+                    ]
+                    assignment_list = [int(target_row['out_sat'])]
 
-                # map satellite_id to sat_idx in StarryNet
-                gw_sat_list = [int(self.sat_map_df.loc[
-                    self.sat_map_df['sat_num'] == sat]['k'].values) for sat in assignment_list]
-
-                for j in range(0, sat_num):
-                    if sat_lla[cur_time][j][0] >= down_lat and sat_lla[
-                            cur_time][j][0] <= up_lat:
-                        x1 = sat_cbf[cur_time][j][0]  # in km
-                        y1 = sat_cbf[cur_time][j][1]
-                        z1 = sat_cbf[cur_time][j][2]
-                        dist = math.sqrt(
-                            np.square(x1 - x2) + np.square(y1 - y2) +
-                            np.square(z1 - z2))
-                        if dist < bound_dis:
-                            # [satellite index，distance]
-                            access_list.update({j: dist})
-                # NOTE algorithm 1
-                sat_to_remove = [sat_idx for sat_idx, _ in access_list.items() if sat_idx not in gw_sat_list]
+                # NOTE: all baselines
+                # for j in range(0, sat_num):
+                #     if sat_lla[cur_time][j][0] >= down_lat and sat_lla[
+                #             cur_time][j][0] <= up_lat:
+                #         x1 = sat_cbf[cur_time][j][0]  # in km
+                #         y1 = sat_cbf[cur_time][j][1]
+                #         z1 = sat_cbf[cur_time][j][2]
+                #         dist = math.sqrt(
+                #             np.square(x1 - x2) + np.square(y1 - y2) +
+                #             np.square(z1 - z2))
+                #         if dist < bound_dis:
+                #             # [satellite index，distance]
+                #             access_list.update({j: dist})
+                # NOTE: all baselines
                 
+                # NOTE algorithm 1
+                for j in range(0, sat_num):
+                    x1 = sat_cbf[cur_time][j][0]  # in km
+                    y1 = sat_cbf[cur_time][j][1]
+                    z1 = sat_cbf[cur_time][j][2]
+                    dist = math.sqrt(
+                        np.square(x1 - x2) + np.square(y1 - y2) +
+                        np.square(z1 - z2))
+                    access_list.update({j: dist})
+                sat_to_remove = [sat_idx for sat_idx, _ in access_list.items() if sat_idx not in assignment_list]
+               
                 for sat_idx in sat_to_remove:
                     access_list.pop(sat_idx)
                 # NOTE algorithm 1 end
@@ -177,35 +197,7 @@ class Observer():
                 # # NOTE: baseline 2
                 # self.pre_conn_list[i] = conn_list
                 # # NOTE: baseline 2 end
- 
-            # for i in range(num_orbits):
-            #     for j in range(num_sats_per_orbit):
-            #         num_sat1 = i * num_sats_per_orbit + j
-            #         x1 = sat_cbf[cur_time][num_sat1][0]  # km
-            #         y1 = sat_cbf[cur_time][num_sat1][1]
-            #         z1 = sat_cbf[cur_time][num_sat1][2]
-            #         num_sat2 = i * num_sats_per_orbit + (
-            #             j + 1) % num_sats_per_orbit
-            #         x2 = sat_cbf[cur_time][num_sat2][0]  # km
-            #         y2 = sat_cbf[cur_time][num_sat2][1]
-            #         z2 = sat_cbf[cur_time][num_sat2][2]
-            #         num_sat3 = ((i + 1) % num_orbits) * num_sats_per_orbit + j
-            #         x3 = sat_cbf[cur_time][num_sat3][0]  # km
-            #         y3 = sat_cbf[cur_time][num_sat3][1]
-            #         z3 = sat_cbf[cur_time][num_sat3][2]
-            #         delay1 = math.sqrt(
-            #             np.square(x1 - x2) + np.square(y1 - y2) +
-            #             np.square(z1 - z2)) / (17.31 / 29.5 *
-            #                                    299792.458) * 1000  # ms
-            #         delay2 = math.sqrt(
-            #             np.square(x1 - x3) + np.square(y1 - y3) +
-            #             np.square(z1 - z3)) / (17.31 / 29.5 *
-            #                                    299792.458) * 1000  # ms
-            #         delay_matrix[num_sat1][num_sat2] = delay1
-            #         delay_matrix[num_sat2][num_sat1] = delay1
-            #         delay_matrix[num_sat1][num_sat3] = delay2
-            #         delay_matrix[num_sat3][num_sat1] = delay2
-
+            
             # Hack to construct delay matrices from given constellation config
             for p_idx in range(self.plane_cnt):
                 plane = plane_conf_dfs[p_idx]
@@ -255,7 +247,22 @@ class Observer():
                         delay_matrix[cur_sat][next_sat_in_orbit] = delay1
                         delay_matrix[next_sat_in_orbit][cur_sat] = delay1
                         delay_matrix[cur_sat][sat_in_next_orbit] = delay2
-                        delay_matrix[sat_in_next_orbit][cur_sat] = delay2                       
+                        delay_matrix[sat_in_next_orbit][cur_sat] = delay2
+
+                        if (plane['orbit_id'][i] == inter_plane_ISL_df['orbit_id'][p_idx]) and \
+                            (j == inter_plane_ISL_df['sat_id'][p_idx]):
+                            intra_orbit_sat_delay = 6.424 # ms
+                            inter_orbit_sat_delay = 5.3 # ms
+                            intra_orbit_hops = inter_plane_ISL_df['intra_orbit_hops'][p_idx]
+                            inter_orbit_hops = inter_plane_ISL_df['inter_orbit_hops'][p_idx]
+                            dst_sat = int(self.sat_map_df.loc[
+                                (self.sat_map_df['orbit_id'] == inter_plane_ISL_df['dst_orbit'][p_idx]) &
+                                (self.sat_map_df['orbit_num'] == inter_plane_ISL_df['dst_sat'][p_idx])
+                            ]['k'].values)
+                            delay3 = inter_orbit_sat_delay * inter_orbit_hops + \
+                                intra_orbit_sat_delay * intra_orbit_hops
+                            delay_matrix[cur_sat][dst_sat] = delay3
+                            delay_matrix[dst_sat][cur_sat] = delay3
             
             np.savetxt(path + "/delay/" + str(cur_time + 1) + ".txt",
                        delay_matrix,

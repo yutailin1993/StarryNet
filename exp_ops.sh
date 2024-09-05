@@ -15,7 +15,7 @@ if IFS=',' read -r current_time sim_time next_udpate_time < "./star_info.txt"; t
 
 	echo "current_time: $current_time, sim_time: $sim_time, next_udpate_time: $next_udpate_time"
 
-    sleep 5
+    sleep 10
 
     if [ "$next_udpate_time" -eq "$end_sim_time" ]; then
         python3 exp_ops.py $current_time $sim_time --collect-results 1

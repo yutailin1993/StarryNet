@@ -1343,6 +1343,15 @@ def sn_del_link(first_index, second_index, container_id_list, remote_ssh):
     sn_remote_cmd(
         remote_ssh, 'docker network disconnect ' + GSL_name + " " +
         str(container_id_list[second_index - 1]))
+    sn_remote_cmd(
+        remote_ssh, 'docker exec -d ' + 
+        str(container_id_list[second_index - 1]) + ' ip link delete dev B' +
+        str(second_index) + "-eth" + str(first_index))
+    sn_remote_cmd(
+        remote_ssh, 'docker exec -d ' + 
+        str(container_id_list[first_index - 1]) + ' ip link delete dev B' +
+        str(first_index) + "-eth" + str(second_index))
+    
     sn_remote_cmd(remote_ssh, 'docker network rm ' + GSL_name)
 
 

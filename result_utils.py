@@ -113,12 +113,14 @@ def extract_perf_sections(perf_file):
 
 def parse_perf_results(input_lines):
     # Extract bandwidth values using regular expressions
-    transfer_values = re.findall(r'sec\s*(\d+\.\d+|\d+)\s*MBytes', input_lines)
-    transfer_rates_tuple = re.findall(r'(\d+\.\d+|\d+)\s(M|G)bits/sec', input_lines)
+    transfer_values_tuple = re.findall(r'sec\s*(\d+\.\d+|\d+)\s*(K|M|G)Bytes', input_lines)
+    transfer_rates_tuple = re.findall(r'(\d+\.\d+|\d+)\s(K|M|G)bits/sec', input_lines)
 
     transfer_rates_out = []
     for tup in transfer_rates_tuple:
-        if tup[1] == 'M':
+        if tup[1] == 'K':
+            rate = float(tup[0]) / 1000
+        elif tup[1] == 'M':
             rate = float(tup[0])
         elif tup[1] == 'G':
             rate = float(tup[0]) * 1000
@@ -126,7 +128,17 @@ def parse_perf_results(input_lines):
             raise ValueError("Invalid rate unit.")
         transfer_rates_out.append(rate)
     
-    transfer_values_out = [float(x) for x in transfer_values]
+    transfer_values_out = []
+    for tup in transfer_values_tuple:
+        if tup[1] == 'K':
+            value = float(tup[0]) / 1000
+        elif tup[1] == 'M':
+            value = float(tup[0])
+        elif tup[1] == 'G':
+            value = float(tup[0]) * 1000
+        else:
+            raise ValueError("Invalid value unit.")
+        transfer_values_out.append(value)
    
     return transfer_values_out, transfer_rates_out
     
@@ -267,7 +279,7 @@ def get_throughput_results(file_dir, cell_indices, gw_indices, assignments, dura
 
     total_transfer = sum(total_transfer_per_cell)
 
-    total_demands_per_cell = demands*duration/8
+    total_demands_per_cell = np.sum(demands, axis=0)/8
     total_demands = sum(total_demands_per_cell)
 
     return total_transfer, total_demands, total_transfer_per_cell, total_demands_per_cell

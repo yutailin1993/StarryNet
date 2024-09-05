@@ -2,6 +2,8 @@ import json
 import os
 import pandas as pd
 import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
 
 from starrynet.sn_observer import *
 from starrynet.sn_orchestrater import *

@@ -5,9 +5,14 @@ import random
 import math
 import time
 import numpy as np
+import pandas as pd
+import warnings
+
+warnings.filterwarnings("ignore")
 
 class ExpOps():
     def __init__(self,
+                 duration,
                  current_time,
                  sim_time,
                  user_demands,
@@ -16,6 +21,7 @@ class ExpOps():
                  gw_indices, 
                  cell_indices,
                  constellation_conf_dir,):
+        self.duration = duration
         self.current_time = current_time
         self.sim_time = sim_time
         self.user_demands = user_demands
@@ -139,12 +145,12 @@ class ExpOps():
             cell_idx = self.cell_indices.index(cell)
             src = cell
             if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
+                dst = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
 
             if dynamic_demand is True:
-                demand = self.user_demands[self.current_time_idx, cell_idx]
+                demand = self.user_demands[self.current_time, cell_idx]
             else:
                 demand = self.user_demands[0, cell_idx]
                 
@@ -170,7 +176,7 @@ class ExpOps():
             cell_idx = self.cell_indices.index(cell)
             src = cell
             if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
+                dst = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
 
@@ -188,7 +194,7 @@ class ExpOps():
         for cell_idx, cell in enumerate(self.cell_indices):
             src = cell
             if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time_idx, cell_idx])]
+                dst = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
                 
@@ -240,7 +246,7 @@ def run_command(command):
 def parseargs():
     parser = argparse.ArgumentParser(description='Description of your program')
     parser.add_argument('current_time', type=int, help='Current time in the simulation')
-    parser.add_argument('sim_time', type=float, help='Simulation time')
+    parser.add_argument('sim_time', type=int, help='Simulation time')
     parser.add_argument('--constellation_conf_dir', type=str,
                         default='./sim_configs/small_scenario/',
                         help='Path to the constellation configuration directory')
@@ -258,7 +264,10 @@ def main():
     results_dir = args.results_dir
     sim_time = args.sim_time
     constellation_conf_dir = args.constellation_conf_dir
-    
+    duration = 30
+    dynamic_demand = True
+
+    link_bandwidth = 1000 # Megabits per second
     satellites_num = 76
     
     gw_indices = [x for x in range(satellites_num + 1, satellites_num + 6)]
@@ -269,27 +278,37 @@ def main():
 
     if (assignments.ndim == 1):
         assignments = np.expand_dims(assignments, axis=0)
-    
-    # assignments_df = np.genfromtxt('./sim_configs/assignment.csv', delimiter=',', skip_header=1)
-    # assignments_time = assignments_df[:, 0]
-    # assignments = assignments_df[:, 1:].astype(int)
-    
-    # a = np.array(assignments.shape)
-    
-    # # user demands
-    # demands_df = np.genfromtxt('./sim_configs/user_demand.csv', delimiter=',', skip_header=1)
-    # demands_time = demands_df[:, 0]
-    # demands = demands_df[:, 1:]*10
-    demands = np.ones((assignments.shape[1]))*600 # Mbps
+
+    # demands configuration
+    sat_cell_assignments = []
+    for gw_idx in range(len(gw_indices)):
+        assignment_csv = pd.read_csv(f'./sim_configs/small_scenario/sat_cell_assignments/gw0{gw_idx}_flows.csv')
+        sat_cell_assignments.append(assignment_csv)
+
+    if dynamic_demand:
+        demands = np.zeros((duration, len(cell_indices)), dtype=float)
+    else:
+        demands = np.zeros((1, len(cell_indices)), dtype=float)
+
+    bandwidth_ratio = link_bandwidth / 20
+    for time_idx in range(duration):
+        for cell_idx, _ in enumerate(cell_indices):
+            target_gw_idx = assignments[0, cell_idx]
+            sat_cell_df = sat_cell_assignments[target_gw_idx]
+            demands[time_idx, cell_idx] = float(sat_cell_df.loc[
+                (sat_cell_df['t'] == time_idx) &
+                (sat_cell_df['cell'] == cell_idx)
+            ]['init_demand']) * bandwidth_ratio
 
     if (demands.ndim == 1):
         demands = np.expand_dims(demands, axis=0)
 
     # initialize
-    exp_ops = ExpOps(current_time, sim_time, demands, assignments, results_dir,
+    exp_ops = ExpOps(duration, current_time, sim_time, demands, assignments, results_dir,
                      gw_indices, cell_indices, constellation_conf_dir)
     
-    exp_ops.perform_flood(dynamic_gw=False, dynamic_demand=False)
+    exp_ops.perform_flood(dynamic_gw=False, dynamic_demand=dynamic_demand)
+    time.sleep(10)
     
     print("start traceroute")
     exp_ops.perform_traceroute(dynamic_gw=False)
