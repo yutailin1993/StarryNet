@@ -245,6 +245,7 @@ def get_throughput_results(file_dir, cell_indices, gw_indices, assignments, dura
                            demands, change_time, change_matrix, handover_type, delay_dir):
     total_transfer = 0
     total_transfer_per_cell = []
+    transfer_matrix = []
 
     total_demands_per_cell = []
     total_demands = 0
@@ -273,7 +274,7 @@ def get_throughput_results(file_dir, cell_indices, gw_indices, assignments, dura
                                                  change_time, cell_indices, transferred_list,
                                                  trans_rates_list, handover_type, delay_dir)
 
-
+        transfer_matrix.append(transferred_list)
         transferred = aggregate_results(transferred_list)
         total_transfer_per_cell.append(transferred)
 
@@ -282,7 +283,7 @@ def get_throughput_results(file_dir, cell_indices, gw_indices, assignments, dura
     total_demands_per_cell = np.sum(demands, axis=0)/8
     total_demands = sum(total_demands_per_cell)
 
-    return total_transfer, total_demands, total_transfer_per_cell, total_demands_per_cell
+    return total_transfer, total_demands, total_transfer_per_cell, total_demands_per_cell, np.array(transfer_matrix)
                                                            
 
 
