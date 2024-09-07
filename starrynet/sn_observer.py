@@ -119,7 +119,7 @@ class Observer():
                     ]
                     assignment_list = [int(target_row['out_sat'])]
 
-                # NOTE: all baselines
+                # # NOTE: all baselines
                 # for j in range(0, sat_num):
                 #     if sat_lla[cur_time][j][0] >= down_lat and sat_lla[
                 #             cur_time][j][0] <= up_lat:
@@ -132,7 +132,7 @@ class Observer():
                 #         if dist < bound_dis:
                 #             # [satellite index，distance]
                 #             access_list.update({j: dist})
-                # NOTE: all baselines
+                # # NOTE: all baselines
                 
                 # NOTE algorithm 1
                 for j in range(0, sat_num):

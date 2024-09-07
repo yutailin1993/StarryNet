@@ -34,7 +34,7 @@ def get_handover_delay(cell, target_sat, pre_sat, gw, current_time,
         if curr_matrix[target_sat-1][pre_sat-1] == 0:
             isl_delay = pre_backhaul_delay + target_backhaul_delay
         else:
-            isl_delay = curr_matrix[target_sat-1][pre_sat-1]
+            isl_delay = float(curr_matrix[target_sat-1][pre_sat-1])
     else:
         isl_delay = None
         
@@ -48,14 +48,14 @@ def calculate_handover_delay(pre_backhaul_delay, target_backhaul_delay,
                              pre_comm_delay, target_comm_delay,
                              handover_type, isl_delay=None):
     if handover_type == 'CU-1':
-        delay = 2*pre_comm_delay + 1*target_comm_delay + 6*pre_backhaul_delay + 8*target_backhaul_delay
+        delay = 3*pre_comm_delay + 4*target_comm_delay + 9*pre_backhaul_delay + 10*target_backhaul_delay + (18 * 4.68)
     elif handover_type == 'CU-2':
         assert isl_delay is not None
-        delay = 2*pre_comm_delay + 1*target_comm_delay + 6*isl_delay + 2*target_backhaul_delay
+        delay = 3*pre_comm_delay + 4*target_comm_delay + 8*isl_delay + 3*target_backhaul_delay + (18 * 4.68)
     elif handover_type == 'DU-1':
-        delay = 2*pre_comm_delay + 1*target_comm_delay + 5*pre_backhaul_delay + 3*target_backhaul_delay
+        delay = 3*pre_comm_delay + 4*target_comm_delay + 5*pre_backhaul_delay + 5*target_backhaul_delay + (1.58 * 21)
     elif handover_type == 'DU-2':
-        delay = 2*pre_comm_delay + 1*target_comm_delay
+        delay = 3*pre_comm_delay + 4*target_comm_delay
     else:
         raise ValueError("Invalid handover type.")
     
@@ -152,7 +152,7 @@ def apply_handover_delay(cell, target_sat, pre_sat, gw, in_transferred, transfer
                          current_time, handover_type, delay_dir):
     handover_delay = get_handover_delay(cell, target_sat, pre_sat, gw, current_time,
                                         handover_type, delay_dir)
-    transferred = in_transferred - handover_delay * transfer_rate / 8
+    transferred = in_transferred - handover_delay / 1000 * transfer_rate / 8
     
     if transferred < 0:
         transferred = 0
