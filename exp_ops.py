@@ -248,7 +248,7 @@ def parseargs():
     parser.add_argument('current_time', type=int, help='Current time in the simulation')
     parser.add_argument('sim_time', type=int, help='Simulation time')
     parser.add_argument('--constellation_conf_dir', type=str,
-                        default='./sim_configs/small_scenario/',
+                        default='./sim_configs/small_2/',
                         help='Path to the constellation configuration directory')
     parser.add_argument('--collect-results', type=int, default=0, help='Collect results')
     parser.add_argument('--results-dir', type=str, 
@@ -274,7 +274,7 @@ def main():
     cell_indices = [x for x in range(satellites_num + 6, satellites_num + 50)]
 
     # assignments configurationen
-    assignments = np.genfromtxt('./sim_configs/small_scenario/cell_assignment.csv', delimiter=',', dtype=int)
+    assignments = np.genfromtxt('./sim_configs/small_2/cell_assignment.csv', delimiter=',', dtype=int)
 
     if (assignments.ndim == 1):
         assignments = np.expand_dims(assignments, axis=0)
@@ -282,7 +282,7 @@ def main():
     # demands configuration
     sat_cell_assignments = []
     for gw_idx in range(len(gw_indices)):
-        assignment_csv = pd.read_csv(f'./sim_configs/small_scenario/sat_cell_assignments/gw0{gw_idx}_flows.csv')
+        assignment_csv = pd.read_csv(f'./sim_configs/small_2/sat_cell_assignments/gw0{gw_idx}_flows.csv')
         sat_cell_assignments.append(assignment_csv)
 
     if dynamic_demand:
