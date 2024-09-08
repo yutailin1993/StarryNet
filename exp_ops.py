@@ -264,14 +264,14 @@ def main():
     results_dir = args.results_dir
     sim_time = args.sim_time
     constellation_conf_dir = args.constellation_conf_dir
-    duration = 30
+    duration = 30 # steps
     dynamic_demand = True
 
     link_bandwidth = 1000 # Megabits per second
-    satellites_num = 76
+    satellites_num = 61
     
-    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 6)]
-    cell_indices = [x for x in range(satellites_num + 6, satellites_num + 50)]
+    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 4)]
+    cell_indices = [x for x in range(satellites_num + 4, satellites_num + 151)]
 
     # assignments configurationen
     assignments = np.genfromtxt('./sim_configs/small_2/cell_assignment.csv', delimiter=',', dtype=int)
