@@ -16,12 +16,12 @@ def load_config(conf_path):
     
 if __name__ == '__main__':
     # first GW then Cells
-    constellation_conf_dir = './sim_configs/small_scenario/'
+    constellation_conf_dir = './sim_configs/small_2/'
     
-    satellites_num = 76
-    AS = [[1, satellites_num + 49]]
-    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 6)]
-    cell_indices = [x for x in range(satellites_num + 6, satellites_num + 50)]
+    satellites_num = 61
+    AS = [[1, satellites_num + 3 + 147]]
+    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 4)]
+    cell_indices = [x for x in range(satellites_num + 4, satellites_num + 151)]
     
     handover_type = 'CU-1'
 
@@ -44,7 +44,7 @@ if __name__ == '__main__':
     # slow assignments configuration
     # assignments_df = np.genfromtxt('./sim_configs/assignment.csv', delimiter=',', skip_header=1)
     # assignments_time = assignments_df[:, 0]
-    assignments = np.genfromtxt('./sim_configs/small_scenario/cell_assignment.csv', delimiter=',', dtype=int)
+    assignments = np.genfromtxt('./sim_configs/small_2/cell_assignment.csv', delimiter=',', dtype=int)
     
     # user demands
     # demands_df = np.genfromtxt('./sim_configs/user_demand.csv', delimiter=',', skip_header=1)
