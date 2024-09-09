@@ -20,7 +20,8 @@ class ExpOps():
                  results_dir, 
                  gw_indices, 
                  cell_indices,
-                 constellation_conf_dir,):
+                 constellation_conf_dir,
+                 sat_cell_assignments):
         self.duration = duration
         self.current_time = current_time
         self.sim_time = sim_time
@@ -30,6 +31,7 @@ class ExpOps():
         self.gw_indices = gw_indices
         self.cell_indices = cell_indices
         self.constellation_conf_dir = constellation_conf_dir
+        self.sat_cell_assignments = sat_cell_assignments
         
         self.container_name_prefix = 'ovs_container_'
         self.perf_client_on = False
@@ -48,6 +50,15 @@ class ExpOps():
             self.perf_threads = []
             self.ping_threads = []
             self.stop_perf_clients()
+
+    def _get_target_gs_id(self, cell_idx, target_gw):
+        target_gw_idx = self.gw_indices.index(target_gw)
+        target_antenna = int(self.sat_cell_assignments[target_gw_idx].loc[
+            (self.sat_cell_assignments[target_gw_idx]['time'] == self.current_time) &
+            (self.sat_cell_assignments[target_gw_idx]['cell'] == cell_idx)
+        ]['antenna'].values[0])
+        fac_idx = target_gw_idx * 8 + target_antenna
+        return self.gw_indices[fac_idx]
     
     def _establish_perf_server(self, src, dst):
         assert dst in self.gw_indices
@@ -145,9 +156,11 @@ class ExpOps():
             cell_idx = self.cell_indices.index(cell)
             src = cell
             if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
+                target_gw = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
             else:
-                dst = self.gw_indices[int(self.assignments[0, cell_idx])]
+                target_gw = self.gw_indices[int(self.assignments[0, cell_idx])]
+
+            dst = self._get_target_gs_id(cell_idx, target_gw)
 
             if dynamic_demand is True:
                 demand = self.user_demands[self.current_time, cell_idx]
@@ -176,10 +189,11 @@ class ExpOps():
             cell_idx = self.cell_indices.index(cell)
             src = cell
             if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
+                target_gw = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
             else:
-                dst = self.gw_indices[int(self.assignments[0, cell_idx])]
+                target_gw = self.gw_indices[int(self.assignments[0, cell_idx])]
 
+            dst = self._get_target_gs_id(cell_idx, target_gw)
             self.ping_threads.append(self._establish_ping(src, dst, ping_count=5))
 
         for thread in self.ping_threads:
@@ -194,10 +208,11 @@ class ExpOps():
         for cell_idx, cell in enumerate(self.cell_indices):
             src = cell
             if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
+                target_gw = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
             else:
-                dst = self.gw_indices[int(self.assignments[0, cell_idx])]
-                
+                target_gw = self.gw_indices[int(self.assignments[0, cell_idx])]
+
+            dst = self._get_target_gs_id(cell_idx, target_gw)
             file_name = 'traceroute_{}_{}_{}.txt'.format(self.current_time, src, dst)
             
             result = self._establish_traceroute(src, dst)
@@ -262,16 +277,17 @@ def main():
     args = parseargs()
     current_time = args.current_time
     results_dir = args.results_dir
-    sim_time = args.sim_time
+    sim_time = args.sim_time * 20
     constellation_conf_dir = args.constellation_conf_dir
     duration = 30 # steps
     dynamic_demand = True
+    gw_antenna_num = 8
 
     link_bandwidth = 1000 # Megabits per second
     satellites_num = 61
     
-    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 4)]
-    cell_indices = [x for x in range(satellites_num + 4, satellites_num + 151)]
+    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 3 * gw_antenna_num + 1)]
+    cell_indices = [x for x in range(satellites_num + 3 * gw_antenna_num + 1, satellites_num + 3 * gw_antenna_num + 1 + 147)]
 
     # assignments configurationen
     assignments = np.genfromtxt('./sim_configs/small_2/cell_assignment.csv', delimiter=',', dtype=int)
@@ -281,7 +297,7 @@ def main():
 
     # demands configuration
     sat_cell_assignments = []
-    for gw_idx in range(len(gw_indices)):
+    for gw_idx in range(len(gw_indices) // 8):
         assignment_csv = pd.read_csv(f'./sim_configs/small_2/sat_cell_assignments/gw0{gw_idx}_flows.csv')
         sat_cell_assignments.append(assignment_csv)
 
@@ -296,7 +312,7 @@ def main():
             target_gw_idx = assignments[0, cell_idx]
             sat_cell_df = sat_cell_assignments[target_gw_idx]
             demands[time_idx, cell_idx] = float(sat_cell_df.loc[
-                (sat_cell_df['t'] == time_idx) &
+                (sat_cell_df['time'] == time_idx) &
                 (sat_cell_df['cell'] == cell_idx)
             ]['init_demand']) * bandwidth_ratio
 
@@ -305,19 +321,19 @@ def main():
 
     # initialize
     exp_ops = ExpOps(duration, current_time, sim_time, demands, assignments, results_dir,
-                     gw_indices, cell_indices, constellation_conf_dir)
+                     gw_indices, cell_indices, constellation_conf_dir, sat_cell_assignments)
     
     exp_ops.perform_flood(dynamic_gw=False, dynamic_demand=dynamic_demand)
-    time.sleep(10)
+    time.sleep(30)
     
     print("start traceroute")
     exp_ops.perform_traceroute(dynamic_gw=False)
-    time.sleep(10)
+    time.sleep(5)
     print("traceroute done")
     
     print("start ping") 
     exp_ops.set_ping()
-    time.sleep(10)
+    time.sleep(5)
     print("ping done")
     
     if args.collect_results == 1:

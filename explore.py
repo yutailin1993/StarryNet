@@ -19,21 +19,23 @@ if __name__ == '__main__':
     constellation_conf_dir = './sim_configs/small_2/'
     
     satellites_num = 61
-    AS = [[1, satellites_num + 3 + 147]]
-    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 4)]
-    cell_indices = [x for x in range(satellites_num + 4, satellites_num + 151)]
+    gw_antenna_num = 8
+    AS = [[1, satellites_num + 3 * gw_antenna_num + 147]]
+    gw_indices = [x for x in range(satellites_num + 1, satellites_num + 3 * gw_antenna_num + 1)]
+    cell_indices = [x for x in range(satellites_num + 3 * gw_antenna_num + 1, satellites_num + 3 * gw_antenna_num + 1 + 147)]
     
     handover_type = 'CU-1'
 
     # load ground stations latitudes and longitudes
+    GW_lat_long = []
+    UE_lat_long = []
     gw_df = pd.read_csv(constellation_conf_dir + 'gw.csv')
-    GW_lat_long = [[float(gw_df['latitude'][i]), float(gw_df['longitude'][i])] for i in range(gw_df.shape[0])]
     ue_df = pd.read_csv(constellation_conf_dir + 'users.csv')
-    UE_lat_long = [[float(ue_df['lat'][i]), float(ue_df['lng'][i])] for i in range(ue_df.shape[0])]
-    # with open ('sim_configs/GW_location.txt', 'r') as gw_file:
-    #     GW_lat_long = [list(map(float, line.strip().replace('[', '').replace(']', '').split(','))) for line in gw_file.readlines()]
-    # with open ('sim_configs/UE_location.txt', 'r') as ue_file:
-    #     UE_lat_long = [list(map(float, line.strip().replace('[', '').replace(']', '').split(','))) for line in ue_file.readlines()]
+    for i in range(gw_df.shape[0]):
+        for _ in range(gw_antenna_num):
+            GW_lat_long.append([float(gw_df['latitude'][i]), float(gw_df['longitude'][i])])
+    for i in range(ue_df.shape[0]):
+        UE_lat_long.append([float(ue_df['latitude'][i]), float(ue_df['longitude'][i])])
 
     all_lat_long = GW_lat_long + UE_lat_long
     
