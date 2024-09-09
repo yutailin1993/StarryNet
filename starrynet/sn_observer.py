@@ -114,40 +114,23 @@ class Observer():
                     target_gw_idx = cell_asignments[self.cell_list.index(fac_id)]
                     sat_cell_df = sat_cell_assignments[target_gw_idx]
                     target_row = sat_cell_df.loc[
-                        (sat_cell_df['t'] == cur_time) &
+                        (sat_cell_df['time'] == cur_time) &
                         (sat_cell_df['cell'] == self.cell_list.index(fac_id))
                     ]
                     assignment_list = [int(target_row['out_sat'])]
 
-                # # NOTE: all baselines
-                # for j in range(0, sat_num):
-                #     if sat_lla[cur_time][j][0] >= down_lat and sat_lla[
-                #             cur_time][j][0] <= up_lat:
-                #         x1 = sat_cbf[cur_time][j][0]  # in km
-                #         y1 = sat_cbf[cur_time][j][1]
-                #         z1 = sat_cbf[cur_time][j][2]
-                #         dist = math.sqrt(
-                #             np.square(x1 - x2) + np.square(y1 - y2) +
-                #             np.square(z1 - z2))
-                #         if dist < bound_dis:
-                #             # [satellite index，distance]
-                #             access_list.update({j: dist})
-                # # NOTE: all baselines
-                
-                # NOTE algorithm 1
                 for j in range(0, sat_num):
-                    x1 = sat_cbf[cur_time][j][0]  # in km
-                    y1 = sat_cbf[cur_time][j][1]
-                    z1 = sat_cbf[cur_time][j][2]
-                    dist = math.sqrt(
-                        np.square(x1 - x2) + np.square(y1 - y2) +
-                        np.square(z1 - z2))
-                    access_list.update({j: dist})
-                sat_to_remove = [sat_idx for sat_idx, _ in access_list.items() if sat_idx not in assignment_list]
-               
-                for sat_idx in sat_to_remove:
-                    access_list.pop(sat_idx)
-                # NOTE algorithm 1 end
+                    if sat_lla[cur_time][j][0] >= down_lat and sat_lla[
+                            cur_time][j][0] <= up_lat:
+                        x1 = sat_cbf[cur_time][j][0]  # in km
+                        y1 = sat_cbf[cur_time][j][1]
+                        z1 = sat_cbf[cur_time][j][2]
+                        dist = math.sqrt(
+                            np.square(x1 - x2) + np.square(y1 - y2) +
+                            np.square(z1 - z2))
+                        if dist < bound_dis:
+                            # [satellite index，distance]
+                            access_list.update({j: dist})
                 
                 if len(access_list) > antenna_num:
                     sorted_access_list = dict(

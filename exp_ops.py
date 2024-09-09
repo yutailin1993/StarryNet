@@ -296,7 +296,7 @@ def main():
             target_gw_idx = assignments[0, cell_idx]
             sat_cell_df = sat_cell_assignments[target_gw_idx]
             demands[time_idx, cell_idx] = float(sat_cell_df.loc[
-                (sat_cell_df['t'] == time_idx) &
+                (sat_cell_df['time'] == time_idx) &
                 (sat_cell_df['cell'] == cell_idx)
             ]['init_demand']) * bandwidth_ratio
 

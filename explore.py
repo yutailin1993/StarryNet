@@ -29,7 +29,7 @@ if __name__ == '__main__':
     gw_df = pd.read_csv(constellation_conf_dir + 'gw.csv')
     GW_lat_long = [[float(gw_df['latitude'][i]), float(gw_df['longitude'][i])] for i in range(gw_df.shape[0])]
     ue_df = pd.read_csv(constellation_conf_dir + 'users.csv')
-    UE_lat_long = [[float(ue_df['lat'][i]), float(ue_df['lng'][i])] for i in range(ue_df.shape[0])]
+    UE_lat_long = [[float(ue_df['latitude'][i]), float(ue_df['longitude'][i])] for i in range(ue_df.shape[0])]
     # with open ('sim_configs/GW_location.txt', 'r') as gw_file:
     #     GW_lat_long = [list(map(float, line.strip().replace('[', '').replace(']', '').split(','))) for line in gw_file.readlines()]
     # with open ('sim_configs/UE_location.txt', 'r') as ue_file:
