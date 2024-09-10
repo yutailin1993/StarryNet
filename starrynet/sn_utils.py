@@ -590,23 +590,23 @@ class sn_Emulation_Start_Thread(threading.Thread):
             if words[0] == 'time':
                 print('Emulation in No.' + str(timeptr) + ' second.')
                 # the time when the new change occurrs
-                current_time = str(int(words[1][:-1]))
+                update_time = str(int(words[1][:-1]))
                 # Wait for user input to stop the script
                 print ("[EXP STOP] Current time: " + str(timeptr) + \
-                       ", will update at time: " + str(current_time) + \
-                       ", sim_time: " + str(int(current_time) - timeptr + 1))
+                       ", will update at time: " + str(update_time) + \
+                       ", sim_time: " + str(int(update_time) - timeptr))
                 
                 with open('./star_info.txt', 'w') as f:
                     f.write(str(timeptr) + \
-                            "," + str(int(current_time) - timeptr + 1) + \
-                            "," + str(current_time) + "\n")
+                            "," + str(int(update_time) - timeptr) + \
+                            "," + str(update_time) + "\n")
                 print ("[EXP STOP] waiting for exp_ops...")
                 while not os.path.isfile('./exp_done.txt'):
                     sleep(3)
                 print ("[EXP STOP] resume starrynet")
                 os.remove('./exp_done.txt')
  
-                while int(current_time) > timeptr:
+                while int(update_time) > timeptr:
                     start_time = time.time()
                     if timeptr in self.utility_checking_time:
                         sn_check_utility(
@@ -737,7 +737,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                     if timeptr >= self.duration:
                         return
                     print('Emulation in No.' + str(timeptr) + ' second.')
-                print("A change in time " + current_time + ':')
+                print("A change in time " + update_time + ':')
                 line = fi.readline()
                 words = line.split()
                 line = fi.readline()
@@ -755,7 +755,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                     # FIXME: avoid establishing excessive links
                     # if not self.GSL_link_occupied(f):
                     #     current_topo_path = self.configuration_file_path + "/" + self.file_path + '/delay/' + str(
-                    #         current_time) + '.txt'
+                    #         update_time) + '.txt'
                     #     matrix = sn_get_param(current_topo_path)
                     #     sn_establish_new_GSL(self.container_id_list, matrix,
                     #                          self.constellation_size,
@@ -763,7 +763,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                     #                          self.sat_ground_loss, s, f,
                     #                          self.remote_ssh)
                     current_topo_path = self.configuration_file_path + "/" + self.file_path + '/delay/' + str(
-                        current_time) + '.txt'
+                        update_time) + '.txt'
                     matrix = sn_get_param(current_topo_path)
                     sn_establish_new_GSL(self.container_id_list, matrix,
                                          self.constellation_size,
@@ -884,7 +884,7 @@ class sn_Emulation_Start_Thread(threading.Thread):
                                  self.route_time[index_num], self.file_path,
                                  self.configuration_file_path,
                                  self.container_id_list, self.remote_ssh)
-                timeptr += 1  # current emulating time
+                # timeptr += 1  # current emulating time
                 time.sleep(0.5)
                 if timeptr >= self.duration:
                     return
@@ -1108,10 +1108,10 @@ def sn_handover_establish_GSL_link(container_id_list, constellation_size, delay,
            str(container_id_list[cell_id - 1]) + ' --ip 9.' + str(address_16_23) + '.' +
            '.' + str(address_8_15) + '.60')
 
-def sn_handover(cell_id, target_sat_id, gw, current_time, handover_type, 
+def sn_handover(cell_id, target_sat_id, gw, update_time, handover_type, 
                 constellation_size, container_id_list, file_dir, bw, loss):
     # load delay matrix
-    current_topo_path = file_dir + '/delay/' + str(current_time) + '.txt'
+    current_topo_path = file_dir + '/delay/' + str(update_time) + '.txt'
     matrix = sn_get_param(current_topo_path)
     
     with os.popen('docker exec -i ' + str(container_id_list[cell_id - 1]) + 

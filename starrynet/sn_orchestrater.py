@@ -126,7 +126,7 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
     isl_idx = (current_sat+1) * 3 + 1
     # Establish intra-orbit ISLs
     if current_sat != next_sat_in_orbit:
-        print("[" + str(isl_idx) + "/" + str(constellation_size * 2) +
+        print("[" + str(isl_idx) + "/" + str(constellation_size * 3) +
               "] Establish intra-orbit ISL from: plane " + str(plane_id) + " - (" + 
               str(current_sat) + "," + str(current_orbit_id) + ") to (" + 
               str(next_sat_in_orbit) + "," + str(current_orbit_id) + ")")
@@ -140,9 +140,10 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
         print('[Create ISL:]' + 'docker network create ' + ISL_name +
               " --subnet 10." + str(address_16_23) + "." + str(address_8_15) +
               ".0/24")
-        os.system('docker network connect ' + ISL_name + " " +
+        return_code = os.system('docker network connect ' + ISL_name + " " +
                   str(container_id_list[current_sat]) + " --ip 10." +
                   str(address_16_23) + "." + str(address_8_15) + ".40")
+        print ("[ISL] Connect current node: {}, with return code {}".format(current_sat + 1, return_code))
         delay = matrix[current_sat][next_sat_in_orbit]
         with os.popen(
                 "docker exec -it " +
@@ -172,13 +173,12 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
                       str(current_sat + 1) +
                       "-eth" + str(next_sat_in_orbit + 1) +
                       " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "gbit")
-        print('[Add current node:]' + 'docker network connect ' + ISL_name + " " +
-              str(container_id_list[current_sat]) +
-              " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".40")
-        os.system('docker network connect ' + ISL_name + " " +
+    
+        return_code = os.system('docker network connect ' + ISL_name + " " +
                   str(container_id_list[next_sat_in_orbit]) +
                   " --ip 10." + str(address_16_23) + "." + str(address_8_15) +
                   ".50")
+        print ("[ISL] Connect neighboring node: {}, with return code {}".format(next_sat_in_orbit + 1, return_code))
         with os.popen(
                 "docker exec -it " +
                 str(container_id_list[next_sat_in_orbit]) +
@@ -204,25 +204,22 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
                       str(next_sat_in_orbit + 1) + "-eth" +
                       str(current_sat + 1) +
                       " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "gbit")
-        print('[Add down node:]' + 'docker network connect ' + ISL_name + " " +
-              str(container_id_list[next_sat_in_orbit]) +
-              " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".50")
 
         print("Add 10." + str(address_16_23) + "." + str(address_8_15) +
               ".40/24 and 10." + str(address_16_23) + "." + str(address_8_15) +
               ".50/24 to (" + str(current_sat) + "," + str(current_orbit_id) +
               ") to (" + str(next_sat_in_orbit) + "," + str(current_orbit_id) + ")")
-        isl_idx = isl_idx + 1
+    isl_idx = isl_idx + 1
 
     if current_sat != sat_in_next_orbit:
         # Establish inter-orbit ISLs
-        print("[" + str(isl_idx) + "/" + str(constellation_size * 2) +
+        print("[" + str(isl_idx) + "/" + str(constellation_size * 3) +
               "] Establish inttra-orbit ISL from: plane " + str(plane_id) + " (" 
               + str(current_sat) + "," +
               str(current_orbit_id) + ") to (" + str(sat_in_next_orbit) + "," +
               str(next_orbit_id) + ")")
-        ISL_name = "La_" + str(current_sat) + "-" + str(current_orbit_id) + \
-            "_" + str(sat_in_next_orbit) + "-" + str(next_orbit_id)
+        ISL_name = "La_" + str(current_sat+1) + "-" + str(current_orbit_id) + \
+            "_" + str(sat_in_next_orbit+1) + "-" + str(next_orbit_id)
         address_16_23 = isl_idx >> 8
         address_8_15 = isl_idx & 0xff
         # Create internal network in docker.
@@ -231,9 +228,11 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
         print('[Create ISL:]' + 'docker network create ' + ISL_name +
               " --subnet 10." + str(address_16_23) + "." + str(address_8_15) +
               ".0/24")
-        os.system('docker network connect ' + ISL_name + " " +
+    
+        return_code = os.system('docker network connect ' + ISL_name + " " +
                   str(container_id_list[current_sat]) + " --ip 10." +
                   str(address_16_23) + "." + str(address_8_15) + ".30")
+        print ("[ISL] Connect current node: {}, with return code {}".format(current_sat + 1, return_code))
         delay = matrix[current_sat][sat_in_next_orbit]
         with os.popen(
                 "docker exec -it " +
@@ -263,14 +262,12 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
                       str(current_sat + 1) +
                       "-eth" + str(sat_in_next_orbit + 1) +
                       " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "gbit")
-        print('[Add current node:]' + 'docker network connect ' + ISL_name + " " +
-              str(container_id_list[current_sat]) +
-              " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".30")
+
         os.system('docker network connect ' + ISL_name + " " +
                   str(container_id_list[sat_in_next_orbit]) +
                   " --ip 10." + str(address_16_23) + "." + str(address_8_15) +
                   ".20")
-
+        print ("[ISL] Connect neighboring orbit node: {}, with return code {}".format(sat_in_next_orbit + 1, return_code))
         with os.popen(
                 "docker exec -it " +
                 str(container_id_list[sat_in_next_orbit]) +
@@ -297,9 +294,6 @@ def sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, plane_id
                       str(sat_in_next_orbit + 1) + "-eth" +
                       str(current_sat + 1) +
                       " root netem delay " + str(delay) + "ms loss " + str(loss) + "% rate " + str(bw) + "gbit")
-        print('[Add right node:]' + 'docker network connect ' + ISL_name + " " +
-              str(container_id_list[sat_in_next_orbit]) +
-              " --ip 10." + str(address_16_23) + "." + str(address_8_15) + ".20")
 
         print("Add 10." + str(address_16_23) + "." + str(address_8_15) +
               ".30/24 and 10." + str(address_16_23) + "." + str(address_8_15) +
@@ -333,16 +327,6 @@ def sn_establish_ISLs(container_id_list, matrix, orbit_num, sat_num,
         sat_gw_assignments_df['sat_list'][i] = list(map(int, 
                         sat_gw_assignments_df['sat_list'][i].strip('][').split(', ')))
 
-    ISL_threads = []
-    # for current_orbit_id in range(0, orbit_num):
-    #     for current_sat_id in range(0, sat_num):
-    #         ISL_thread = threading.Thread(
-    #             target=sn_ISL_establish,
-    #             args=(current_sat_id, current_orbit_id, container_id_list,
-    #                   orbit_num, sat_num, constellation_size, matrix, bw,
-    #                   loss))
-    #         ISL_threads.append(ISL_thread)
-
     # Hack to initialize ISLs links from given consetellation config
     for p_idx in range(plane_cnt):
         plane = plane_conf_dfs[p_idx]
@@ -371,13 +355,10 @@ def sn_establish_ISLs(container_id_list, matrix, orbit_num, sat_num,
                 else:
                     next_orbit_id = plane['orbit_id'][(orbit_idx + 1) % plane.shape[0]]
 
-                ISL_thread = threading.Thread(
-                    target=sn_ISL_establish,
-                    args=(current_sat, next_sat_in_orbit, sat_in_next_orbit, 
-                          p_idx, plane['orbit_id'][orbit_idx], next_orbit_id,
-                          container_id_list, orbit_num, 
-                          sat_num, constellation_size, matrix, bw, loss))
-                ISL_threads.append(ISL_thread)
+                sn_ISL_establish(current_sat, next_sat_in_orbit, sat_in_next_orbit, 
+                                 p_idx, plane['orbit_id'][orbit_idx], next_orbit_id,
+                                 container_id_list, orbit_num, sat_num, 
+                                 constellation_size, matrix, bw, loss)
 
                 if (plane['orbit_id'][orbit_idx] == inter_plane_ISL_df['orbit_id'][p_idx]) and \
                     (j == inter_plane_ISL_df['sat_id'][p_idx]):
@@ -387,18 +368,9 @@ def sn_establish_ISLs(container_id_list, matrix, orbit_num, sat_num,
                     ]['k'].values)
                     dst_plane_id = inter_plane_ISL_df['dst_plane'][p_idx]
 
-                    ISL_thread = threading.Thread(
-                        target=sn_inter_plane_ISL_establish,
-                        args=(current_sat, dst_sat, p_idx, dst_plane_id, 
-                              container_id_list, constellation_size, 
-                              matrix, bw, loss))
-                    ISL_threads.append(ISL_thread)
-                    
-    
-    for ISL_thread in ISL_threads:
-        ISL_thread.start()
-    for ISL_thread in ISL_threads:
-        ISL_thread.join()
+                    sn_inter_plane_ISL_establish(current_sat, dst_sat, p_idx, dst_plane_id, 
+                                                 container_id_list, constellation_size, 
+                                                 matrix, bw, loss)
 
 
 def sn_get_param(file_):
