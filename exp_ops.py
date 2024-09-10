@@ -48,6 +48,15 @@ class ExpOps():
             self.perf_threads = []
             self.ping_threads = []
             self.stop_perf_clients()
+
+    def _get_target_gs_id(self, cell_idx, target_gw):
+        target_gw_idx = self.gw_indices.index(target_gw)
+        target_antenna = int(self.sat_cell_assignments[target_gw_idx].loc[
+            (self.sat_cell_assignments[target_gw_idx]['time'] == self.current_time-1) &
+            (self.sat_cell_assignments[target_gw_idx]['cell'] == cell_idx)
+        ]['antenna'].values[0])
+        fac_idx = target_gw_idx * 8 + target_antenna
+        return self.gw_indices[fac_idx]
     
     def _establish_perf_server(self, src, dst):
         assert dst in self.gw_indices
@@ -145,12 +154,12 @@ class ExpOps():
             cell_idx = self.cell_indices.index(cell)
             src = cell
             if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
+                target_gw = self.gw_indices[int(self.assignments[self.current_time-1, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
 
             if dynamic_demand is True:
-                demand = self.user_demands[self.current_time, cell_idx]
+                demand = self.user_demands[self.current_time-1, cell_idx]
             else:
                 demand = self.user_demands[0, cell_idx]
                 
@@ -161,12 +170,13 @@ class ExpOps():
         for thread in self.perf_threads:
             thread.start()
 
-        time.sleep(5)
+        time.sleep(30)
 
         for thread in self.perf_threads:
             thread.join(timeout=2)
             
         self.perf_client_on = True
+        self.perf_threads = []
             
     def set_ping(self, dynamic_gw=False):
         tmp_cell_indices = self.cell_indices.copy()
@@ -176,7 +186,7 @@ class ExpOps():
             cell_idx = self.cell_indices.index(cell)
             src = cell
             if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
+                target_gw = self.gw_indices[int(self.assignments[self.current_time-1, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
 
@@ -185,16 +195,20 @@ class ExpOps():
         for thread in self.ping_threads:
             thread.start()
 
+        time.sleep(5)
+
         for thread in self.ping_threads:
             thread.join(timeout=2)
             
         self.set_ping_on = True
+        self.ping_threads = []
        
     def perform_traceroute(self, dynamic_gw=False):
         for cell_idx, cell in enumerate(self.cell_indices):
+            print ("Traceroute on cell " + str(cell) + "...")
             src = cell
             if dynamic_gw is True:
-                dst = self.gw_indices[int(self.assignments[self.current_time, cell_idx])]
+                target_gw = self.gw_indices[int(self.assignments[self.current_time-1, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
                 
@@ -305,20 +319,23 @@ def main():
 
     # initialize
     exp_ops = ExpOps(duration, current_time, sim_time, demands, assignments, results_dir,
-                     gw_indices, cell_indices, constellation_conf_dir)
-    
-    exp_ops.perform_flood(dynamic_gw=False, dynamic_demand=dynamic_demand)
-    time.sleep(10)
+                     gw_indices, cell_indices, constellation_conf_dir, sat_cell_assignments)
+
+    print ("sleep for 30 seconds for bird routing to update routing tables")
+    time.sleep(30)
     
     print("start traceroute")
     exp_ops.perform_traceroute(dynamic_gw=False)
-    time.sleep(10)
+    time.sleep(3)
     print("traceroute done")
     
     print("start ping") 
     exp_ops.set_ping()
-    time.sleep(10)
+    time.sleep(3)
     print("ping done")
+
+    exp_ops.perform_flood(dynamic_gw=False, dynamic_demand=dynamic_demand)
+    time.sleep(3)
     
     if args.collect_results == 1:
         exp_ops.collect_results()
