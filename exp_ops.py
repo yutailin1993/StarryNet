@@ -49,15 +49,6 @@ class ExpOps():
             self.ping_threads = []
             self.stop_perf_clients()
 
-    def _get_target_gs_id(self, cell_idx, target_gw):
-        target_gw_idx = self.gw_indices.index(target_gw)
-        target_antenna = int(self.sat_cell_assignments[target_gw_idx].loc[
-            (self.sat_cell_assignments[target_gw_idx]['time'] == self.current_time-1) &
-            (self.sat_cell_assignments[target_gw_idx]['cell'] == cell_idx)
-        ]['antenna'].values[0])
-        fac_idx = target_gw_idx * 8 + target_antenna
-        return self.gw_indices[fac_idx]
-    
     def _establish_perf_server(self, src, dst):
         assert dst in self.gw_indices
         gw_container = self.container_name_prefix + str(dst)
@@ -154,7 +145,7 @@ class ExpOps():
             cell_idx = self.cell_indices.index(cell)
             src = cell
             if dynamic_gw is True:
-                target_gw = self.gw_indices[int(self.assignments[self.current_time-1, cell_idx])]
+                dst = self.gw_indices[int(self.assignments[self.current_time-1, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
 
@@ -170,7 +161,8 @@ class ExpOps():
         for thread in self.perf_threads:
             thread.start()
 
-        time.sleep(30)
+        print ("iperf_sleep: " + str(self.sim_time + 10)) 
+        time.sleep(self.sim_time + 10)
 
         for thread in self.perf_threads:
             thread.join(timeout=2)
@@ -186,7 +178,7 @@ class ExpOps():
             cell_idx = self.cell_indices.index(cell)
             src = cell
             if dynamic_gw is True:
-                target_gw = self.gw_indices[int(self.assignments[self.current_time-1, cell_idx])]
+                dst = self.gw_indices[int(self.assignments[self.current_time-1, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
 
@@ -195,7 +187,7 @@ class ExpOps():
         for thread in self.ping_threads:
             thread.start()
 
-        time.sleep(5)
+        time.sleep(7)
 
         for thread in self.ping_threads:
             thread.join(timeout=2)
@@ -208,7 +200,7 @@ class ExpOps():
             print ("Traceroute on cell " + str(cell) + "...")
             src = cell
             if dynamic_gw is True:
-                target_gw = self.gw_indices[int(self.assignments[self.current_time-1, cell_idx])]
+                dst = self.gw_indices[int(self.assignments[self.current_time-1, cell_idx])]
             else:
                 dst = self.gw_indices[int(self.assignments[0, cell_idx])]
                 
@@ -274,12 +266,14 @@ def parseargs():
 
 def main():
     args = parseargs()
+    cell_gw_assignment_file = 'greedy_hold_flows.csv'
     current_time = args.current_time
     results_dir = args.results_dir
-    sim_time = args.sim_time
+    sim_time = args.sim_time * 20
     constellation_conf_dir = args.constellation_conf_dir
     duration = 30 # steps
     dynamic_demand = True
+    dynamic_gw = True
 
     link_bandwidth = 1000 # Megabits per second
     satellites_num = 61
@@ -287,54 +281,44 @@ def main():
     gw_indices = [x for x in range(satellites_num + 1, satellites_num + 4)]
     cell_indices = [x for x in range(satellites_num + 4, satellites_num + 151)]
 
-    # assignments configurationen
-    assignments = np.genfromtxt('./sim_configs/small_2/cell_assignment.csv', delimiter=',', dtype=int)
-
-    if (assignments.ndim == 1):
-        assignments = np.expand_dims(assignments, axis=0)
+    # assignments configuration
+    cell_gw_assignment_df = pd.read_csv(f'./sim_configs/small_2/{cell_gw_assignment_file}')
+    assignments = np.zeros((duration, len(cell_indices)), dtype=int) - 1
+    for time_idx in range(duration):
+        for cell_idx, _ in enumerate(cell_indices):
+            assignments[time_idx, cell_idx] = int(cell_gw_assignment_df.loc[
+                (cell_gw_assignment_df['time'] == time_idx) &
+                (cell_gw_assignment_df['cell'] == cell_idx)
+            ]['gw'].values[0])
 
     # demands configuration
-    sat_cell_assignments = []
-    for gw_idx in range(len(gw_indices)):
-        assignment_csv = pd.read_csv(f'./sim_configs/small_2/sat_cell_assignments/gw0{gw_idx}_flows.csv')
-        sat_cell_assignments.append(assignment_csv)
-
-    if dynamic_demand:
-        demands = np.zeros((duration, len(cell_indices)), dtype=float)
-    else:
-        demands = np.zeros((1, len(cell_indices)), dtype=float)
-
+    demands = np.zeros((duration, len(cell_indices)), dtype=float)
     bandwidth_ratio = link_bandwidth / 20
     for time_idx in range(duration):
         for cell_idx, _ in enumerate(cell_indices):
-            target_gw_idx = assignments[0, cell_idx]
-            sat_cell_df = sat_cell_assignments[target_gw_idx]
-            demands[time_idx, cell_idx] = float(sat_cell_df.loc[
-                (sat_cell_df['time'] == time_idx) &
-                (sat_cell_df['cell'] == cell_idx)
-            ]['init_demand']) * bandwidth_ratio
-
-    if (demands.ndim == 1):
-        demands = np.expand_dims(demands, axis=0)
+            demands[time_idx, cell_idx] = float(cell_gw_assignment_df.loc[
+                (cell_gw_assignment_df['time'] == time_idx) &
+                (cell_gw_assignment_df['cell'] == cell_idx)
+            ]['init_demand'].values[0]) * bandwidth_ratio
 
     # initialize
     exp_ops = ExpOps(duration, current_time, sim_time, demands, assignments, results_dir,
-                     gw_indices, cell_indices, constellation_conf_dir, sat_cell_assignments)
+                     gw_indices, cell_indices, constellation_conf_dir)
 
     print ("sleep for 30 seconds for bird routing to update routing tables")
     time.sleep(30)
     
     print("start traceroute")
-    exp_ops.perform_traceroute(dynamic_gw=False)
+    exp_ops.perform_traceroute(dynamic_gw=dynamic_gw)
     time.sleep(3)
     print("traceroute done")
     
     print("start ping") 
-    exp_ops.set_ping()
+    exp_ops.set_ping(dynamic_gw=dynamic_gw)
     time.sleep(3)
     print("ping done")
 
-    exp_ops.perform_flood(dynamic_gw=False, dynamic_demand=dynamic_demand)
+    exp_ops.perform_flood(dynamic_gw=dynamic_gw, dynamic_demand=dynamic_demand)
     time.sleep(3)
     
     if args.collect_results == 1:

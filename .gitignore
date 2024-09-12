@@ -63,6 +63,4 @@ starlink*
 /results/
 /.vscode/
 dry_run.ipynb
-result_plot.ipynb
-result_utils.py
 test.sh
