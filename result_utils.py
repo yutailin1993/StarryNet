@@ -177,7 +177,7 @@ def construct_change_matrix(cell_num, topo_change_file, cell_indices, sim_durati
     while line:
         words = line.split()
         if words[0] == 'time':
-            print ("Time: " + words[1].strip())
+            # print ("Time: " + words[1].strip())
             if (int(words[1].strip(':')) == sim_duration+1):
                 break
             
@@ -195,7 +195,7 @@ def construct_change_matrix(cell_num, topo_change_file, cell_indices, sim_durati
                 if s > f:
                     s, f = f, s
                 if f in cell_indices:
-                    print ("Add link: " + str(s) + " " + str(f))
+                    # print ("Add link: " + str(s) + " " + str(f))
                     change_matrix[cell_indices.index(f)][change_idx][1] = s
                 line = fi.readline()
                 words = line.split()
@@ -209,7 +209,7 @@ def construct_change_matrix(cell_num, topo_change_file, cell_indices, sim_durati
                 if s > f:
                     s, f = f, s
                 if f in cell_indices:
-                    print ("Del link: " + str(s) + " " + str(f))
+                    # print ("Del link: " + str(s) + " " + str(f))
                     change_matrix[cell_indices.index(f)][change_idx][0] = s
                 line = fi.readline()
                 words = line.split() 
@@ -262,7 +262,7 @@ def get_throughput_results(file_dir, cell_indices, gw_indices, assignments, dura
         if sections is None:
             continue
         transferred_list, trans_rates_list = parse_perf_results(sections)
-        print ("cell: {}".format(cell))
+        # print ("cell: {}".format(cell))
         
         # print (len(transferred_list))
         # print (len(trans_rates_list))
@@ -344,7 +344,36 @@ def get_instant_achieved_capacity(file_dir, cell_indices, gw_indices, assignment
 
                 
     return np.mean(np.array(avg_achieved_capacities), axis=0)
-    
+
+def get_handover_delay_comparison(cell_indices, gw_indices, assignments, change_step, 
+                                  change_matrix, handover_type, delay_dir, duration):
+    handover_delay_list = []
+    for cell_idx, cell in enumerate(cell_indices):
+        gw_list = [gw_indices[assignments[t, cell_idx]] for t in range(duration)]
+        cell_changes = change_matrix[cell_idx]
+
+        for idx, time in enumerate(change_step):
+            if cell_changes[idx][0] == cell_changes[idx][1]:
+                continue
+
+            pre_sat = cell_changes[idx][0]
+            target_sat = cell_changes[idx][1]
+            pre_gw = gw_list[time-1-1] if time-1 > 0 else gw_list[time-1]
+            curr_gw = gw_list[time-1]
+            handover_delay = get_handover_delay(cell, target_sat, pre_sat, pre_gw, curr_gw, time,
+                                                handover_type, delay_dir)
+
+            handover_delay_list.append(handover_delay)
+    return np.array(handover_delay_list)
+
+def holistic_get_target_gs_idx(cell_idx, target_gw_idx, time_idx, sat_cell_assignments):
+        target_antenna = int(sat_cell_assignments[target_gw_idx].loc[
+            (sat_cell_assignments[target_gw_idx]['time'] == time_idx) &
+            (sat_cell_assignments[target_gw_idx]['cell'] == cell_idx)
+        ]['antenna'].values[0])
+        fac_idx = target_gw_idx * 8 + target_antenna
+        return fac_idx
+
 if __name__ == "__main__":
 	# Perform some actions or call functions here
 	print ("No main function to run.")
