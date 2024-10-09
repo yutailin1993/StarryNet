@@ -291,6 +291,11 @@ def main():
                 (cell_gw_assignment_df['cell'] == cell_idx)
             ]['gw'].values[0])
 
+    # # NOTE: baseline 2
+    # assignments = np.genfromtxt('./sim_configs/small_2/cell_assignment.csv', delimiter=',', dtype=int)
+    # assignments = np.stack([assignments] * duration, axis=0)
+    # # NOTE: baseline 2
+
     # demands configuration
     demands = np.zeros((duration, len(cell_indices)), dtype=float)
     bandwidth_ratio = link_bandwidth / 20

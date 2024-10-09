@@ -305,22 +305,22 @@ def get_window_feasible_rate(cell, gw_list, transferred_list, capacity_over_step
                                             handover_type, delay_dir)
         switch_time = (time-1) * 20
         pre_trans_rate = transferred_list[switch_time-1] / window_size
-        curr_trans_rate = transferred_list[switch_time] / window_size
+        curr_trans_rate = np.mean(transferred_list[switch_time:switch_time+4]) / window_size
         optimal_rate = capacity_over_step[time-1] / window_size / 147
 
         trans_window = np.zeros(window_size, dtype=float)
         trans_window[:before_w] = pre_trans_rate
         trans_window[before_w + int(handover_delay//time_unit)+1:] = curr_trans_rate
 
-        moving_avg = np.convolve(trans_window, np.ones(4)/4, mode='valid')
-        transfer_window_list.append(moving_avg / optimal_rate)
+        moving_avg = np.convolve(trans_window, np.ones(2)/2, mode='valid')
+        transfer_window_list.append(moving_avg)
 
     return np.mean(np.array(transfer_window_list), axis=0)
                                                            
 def get_instant_achieved_capacity(file_dir, cell_indices, gw_indices, assignments, time_unit, duration,
                               capacity_over_step, change_step, change_matrix, handover_type, delay_dir):
     window_size = int(1000 / time_unit)
-    avg_achieved_capacities = np.zeros((len(cell_indices), window_size-3), dtype=float)
+    avg_achieved_capacities = np.zeros((len(cell_indices), window_size-1), dtype=float)
     before_w = int(window_size // 3)
 
     for cell_idx, cell in enumerate(cell_indices):
