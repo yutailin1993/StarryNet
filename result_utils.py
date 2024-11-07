@@ -309,8 +309,8 @@ def get_window_feasible_rate(cell, gw_list, transferred_list, capacity_over_step
         optimal_rate = capacity_over_step[time-1] / window_size / 147
 
         trans_window = np.zeros(window_size, dtype=float)
-        trans_window[:before_w] = pre_trans_rate
-        trans_window[before_w + int(handover_delay//time_unit)+1:] = curr_trans_rate
+        trans_window[:before_w] = pre_trans_rate / optimal_rate
+        trans_window[before_w + int(handover_delay//time_unit)+1:] = curr_trans_rate / optimal_rate
 
         moving_avg = np.convolve(trans_window, np.ones(2)/2, mode='valid')
         transfer_window_list.append(moving_avg)
@@ -374,7 +374,53 @@ def holistic_get_target_gs_idx(cell_idx, target_gw_idx, time_idx, sat_cell_assig
         fac_idx = target_gw_idx * 8 + target_antenna
         return fac_idx
 
+def get_delay_matrix(ping_file, sim_length):
+    avg_delays = np.zeros((sim_length, 1), dtype=float)
+    std_delays = np.zeros((sim_length, 1), dtype=float)
+
+    with open(ping_file, 'r') as f:
+        ping_output = f.read()
+
+    ping_lines = ping_output.split('\n')
+    time_idx = 1 # start_time
+    line_idx = 0
+
+    while time_idx <= sim_length:
+        while True:
+            line = ping_lines[line_idx]
+            if 'current_time:' in line:
+                read_time = int(line.split(', ')[0].split(': ')[1])
+                line_idx += 1
+                break
+
+            line_idx += 1
+
+        # parse ping delay
+        parse_end_idx = line_idx
+        while 'ping statistics ---' not in ping_lines[parse_end_idx]:
+            parse_end_idx += 1
+
+        delays = re.findall(r'time=(\d+\.\d+|\d+) ms', '\n'.join(ping_lines[line_idx:parse_end_idx]))
+
+        mean_delay = np.mean([float(d) for d in delays])
+        std_delay = np.std([float(d) for d in delays])
+
+        while time_idx <= read_time:
+            avg_delays[time_idx-1] = mean_delay
+            std_delays[time_idx-1] = std_delay
+            time_idx += 1
+
+        line_idx = parse_end_idx
+
+    return avg_delays, std_delays
+
+    
 if __name__ == "__main__":
-	# Perform some actions or call functions here
-	print ("No main function to run.")
-	pass
+	# # Perform some actions or call functions here
+	# print ("No main function to run.")
+	# pass
+
+    ping_file = '/home/larry/NTN/results/greedy_hold_small_2/ping/ping_196_results.txt'
+    sim_length = 29
+
+    mean_delays, std_delays = get_delay_matrix(ping_file, sim_length)
