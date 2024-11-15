@@ -276,7 +276,7 @@ def main():
     dynamic_gw = True
 
     link_bandwidth = 1000 # Megabits per second
-    satellites_num = 61
+    satellites_num = 62
     
     gw_indices = [x for x in range(satellites_num + 1, satellites_num + 4)]
     cell_indices = [x for x in range(satellites_num + 4, satellites_num + 151)]

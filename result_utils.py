@@ -247,12 +247,10 @@ def handover_through_time(cell, gw_list, iperf_start_times, iperf_sim_times, cha
     return transferred_list
 
 def get_throughput_results(file_dir, cell_indices, gw_indices, assignments, duration,
-                           demands, change_step, change_matrix, handover_type, delay_dir):
+                           demands, change_step, change_matrix, handover_type, delay_dir, along_time=False):
     total_transfer = 0
-    total_transfer_per_cell = []
     transfer_matrix = []
 
-    total_demands_per_cell = []
     total_demands = 0
 
     for cell in cell_indices:
@@ -280,11 +278,22 @@ def get_throughput_results(file_dir, cell_indices, gw_indices, assignments, dura
         transfer_matrix.append(transferred_list)
 
     transfer_matrix = np.array(transfer_matrix)
-    
-    total_demands_per_cell = np.sum(demands, axis=0) / 8
-    total_transfer_per_cell = np.sum(transfer_matrix, axis=1) / 20
 
-    return total_transfer_per_cell, total_demands_per_cell, np.array(transfer_matrix)
+    if not along_time:
+        total_demands_per_cell = []
+        total_transfer_per_cell = []
+        total_demands_per_cell = np.sum(demands, axis=0) / 8
+        total_transfer_per_cell = np.sum(transfer_matrix, axis=1) / 20
+
+        return total_transfer_per_cell, total_demands_per_cell, np.array(transfer_matrix)
+    else:
+        total_demands_per_time = []
+        total_transfer_per_time = []
+        total_demands_per_time = np.sum(demands, axis=1) / 8
+        total_transfer_per_time = np.sum(transfer_matrix, axis=0)
+        total_transfer_per_time = np.sum(total_transfer_per_time.reshape(-1, 20), axis=1) / 20
+
+        return total_transfer_per_time, total_demands_per_time, np.array(transfer_matrix)
 
 def get_window_feasible_rate(cell, gw_list, transferred_list, capacity_over_step, 
                              time_unit, window_size, before_w, change_step,

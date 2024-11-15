@@ -18,7 +18,7 @@ if __name__ == '__main__':
     # first GW then Cells
     constellation_conf_dir = './sim_configs/small_2/'
     
-    satellites_num = 61
+    satellites_num = 62
     AS = [[1, satellites_num + 3 + 147]]
     gw_indices = [x for x in range(satellites_num + 1, satellites_num + 4)]
     cell_indices = [x for x in range(satellites_num + 4, satellites_num + 151)]
